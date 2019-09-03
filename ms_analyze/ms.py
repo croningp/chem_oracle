@@ -167,5 +167,9 @@ class MassSpectrum:
     def find_peaks(self, **options):
         return find_peaks(self.intensities/self.intensities.max(), **options)[0]
     
+    def find_main_peak(self):
+        peak_idx = np.argmax(self.intensities)
+        return peak_idx
+    
     def __getitem__(self, idx):
         return self.intensities[idx]

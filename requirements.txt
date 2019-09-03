@@ -1,4 +1,5 @@
-advion-wrapper
+git+http://datalore.chem.gla.ac.uk/DMC/advionwrapper.git
+watchdog
 matplotlib
 numpy
 scikit-learn

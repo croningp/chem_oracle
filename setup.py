@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
-setup(name="MSAnalyze",
+setup(name="chem-oracle",
       version="0.1",
-      description="HPLC-MS analysis library",
-      url="http://datalore.chem.gla.ac.uk/HessamMehr/MSAnalyze",
+      description="Chemical space exploration algorithm for the discovery rig",
+      url="http://datalore.chem.gla.ac.uk/HessamMehr/ChemOracle",
       author="Hessam Mehr, Dario Caramelli",
       author_email="Hessam.Mehr@glasgow.ac.uk",
       license="MIT",
