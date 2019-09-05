@@ -1,4 +1,7 @@
 git+http://datalore.chem.gla.ac.uk/DMC/advionwrapper.git
+theano
+pymc3
+rdkit
 watchdog
 matplotlib
 numpy
