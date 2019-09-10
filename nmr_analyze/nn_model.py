@@ -69,7 +69,7 @@ class NMR_nn():
     """ Class for predicting the reactivty of reaction mixtures using
         experimental and theoretical spectrum."""
 
-    def __init__(self, spectrum_shape=271, noise_level=0.5):
+    def __init__(self, model_path="models/fullset", spectrum_shape=271, noise_level=0.5):
         self.noise_level = noise_level
         self.spectrum_shape = spectrum_shape
         NUM_THREADS = 4
@@ -78,8 +78,7 @@ class NMR_nn():
         self.initial_learning_rate = 5e-3
         self.num_epochs = 300
         self.batch_size = 8
-        self.model_path = "models/all-1504191458-0.7294521"
-        self.train_path = "models/fullset"
+        self.model_path = model_path
 
     def build_model(self, x, phase):
         """ Builds tensorflow graphs
@@ -179,7 +178,7 @@ class NMR_nn():
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 print('New validation loss found {}'.format(val_loss))
-                saver.save(sess, self.train_path)
+                saver.save(sess, self.model_path)
 
     def test(self, testx, testy):
         # Reset tensorflow graph
@@ -206,7 +205,7 @@ class NMR_nn():
         sess = tf.Session()
         saver = tf.train.Saver()
         sess.run(tf.global_variables_initializer())
-        saver.restore(sess, self.train_path)
+        saver.restore(sess, self.model_path)
 
         feed_dict = {x: testx, y_true: testy, phase: False}
         test_loss, test_pred, test_accuracy, test_top2_accuracy = sess.run([loss, y_pred, accuracy, top2_accuracy],
@@ -264,7 +263,7 @@ class NMR_nn():
         sess = tf.Session()
         saver = tf.train.Saver()
         sess.run(tf.global_variables_initializer())
-        saver.restore(sess, self.train_path)
+        saver.restore(sess, self.model_path)
 
         feed_dict = {x: datax, phase: False}
         prediction = sess.run([y_pred], feed_dict=feed_dict)

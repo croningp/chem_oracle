@@ -67,6 +67,9 @@ def morgan_bits(mol, radius, nbits):
     result[morgan_fp.GetOnBits()] = 1.0
     return result
 
+def morgan_matrix(mols, radius, nbits):
+    return np.stack(morgan_bits(mol, radius, nbits) for mol in mols)
+
 def split_bin_tri(facts):
     bin_facts = facts[facts["compound3"] == -1]
     tri_facts = facts[facts["compound3"] != -1]

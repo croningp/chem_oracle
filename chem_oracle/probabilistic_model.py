@@ -96,13 +96,21 @@ class NonstructuralModel:
 
 
 class StructuralModel:
-    def __init__(self, fingerprints, N=4):
-        """fingerprints: Matrix of Morgan fingerprints for reagents."""
+    def __init__(self, fingerprint_matrix: np.ndarray, N: int = 4):
+        """Bayesian reactivity model informed by structural fingerprints.
+
+        Args:
+            fingerprint_matrix (n_compounds × fingerprint_length matrix):
+                a numpy matrix row i of which contains the fingerprint bits
+                for the i-th compound.
+            N (int, optional): Number of abstract properties. Defaults to 4.
+        """
+        # """fingerprints: Matrix of Morgan fingerprints for reagents."""
         self.N = N
         self.bin_indices = indices(N, 2)
         self.tri_indices = indices(N, 3)
-        self.fingerprints = tt._shared(fingerprints)
-        self.ncompounds, self.fingerprint_length = fingerprints.shape
+        self.fingerprints = tt._shared(fingerprint_matrix)
+        self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
     def _pymc3_model(self, facts):
         bin_facts = facts[facts["compound3"] == -1]

@@ -12,11 +12,24 @@ class MassSpectra:
     """
 
     def __init__(
-        self, retention_times: np.array, masses: np.array, spectra: np.array, scale=None
+        self,
+        retention_times: np.ndarray,
+        masses: np.ndarray,
+        spectra: np.ndarray,
+        scale=None,
     ):
+        """Class representing a series of mass spectra in an HPLC/MS experiment.
+        Each mass spectrum corresponds to a specific retention time.
+
+        Args:
+            retention_times (np.ndarray): Retention times in minutes.
+            masses (np.ndarray): Masses for which intensities are measured.
+            spectra (np.ndarray): Intensities for each mass for each spectrum.
+                spectra[i, j] is the intensity of the j-th ion in the i-th spectrum.
+            scale ([type], optional): [description]. TODO
+        """
         self.retention_times = retention_times
         self.masses = masses
-        # spectra[i, j] is the intensity of the j-th ion in the i-th spectrum
         self.spectra = spectra
         # highest peak in spectrum
         self.scale = scale or spectra.max()
@@ -87,12 +100,6 @@ class MassSpectra:
             self.scale,
         )
 
-    def retention_times(self):
-        """
-        Return retention times in minutes.
-        """
-        return self.retention_times
-
     def chromatogram(self, normalize: bool = False):
         """
         Returns a 2 x N matrix whose first row represents the retention time
@@ -130,7 +137,7 @@ class MassSpectra:
         peaks = bg.find_peaks(height=0.1, distance=3)
         for peak in peaks:
             logging.debug(f"Removing peak at {self.masses[peak]}")
-            self.remove_peak(self.masses[peak], Δ=Δ)
+            self.remove_peak(self.masses[peak], delta_mass=Δ)
         return self
 
     def TIC_peaks(self, height=0.2, peak_Δt=0.5, prominence=0.15, **options):

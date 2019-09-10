@@ -1,5 +1,4 @@
 import nn_model
-from utils import *
 import pandas as pd
 from matplotlib import pyplot as plt
 

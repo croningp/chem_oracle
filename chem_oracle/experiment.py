@@ -1,14 +1,18 @@
 import logging
 import random
+from datetime import datetime
 from os import path
+from shutil import copyfile
 from typing import List, Union
 
 import numpy as np
 import pandas as pd
-
-from ms_analyze.ms import MassSpectra
+from rdkit.Chem import MolFromSmiles
 
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
+from chem_oracle.util import morgan_matrix
+from ms_analyze.ms import MassSpectra
+from nmr_analyze.nn_model import full_nmr_process
 
 
 def parse_nmr_filename(filename: str) -> List[str]:
@@ -73,44 +77,59 @@ class ExperimentManager:
 
         self.read_experiments()
 
-        self.n_compounds = len(self.reagents_df["compound"].unique())
+        self.n_compounds = len(self.reagents_df["reagent_number"].unique())
 
         if structural_model:
             # calculate fingerprints
-            fingerprints = None
+            mols = [MolFromSmiles(smiles) for smiles in self.reagents_df["SMILES"]]
+            # TODO: expose this as a parameter
+            fingerprints = morgan_matrix(mols, radius=3, nbits=128)
             self.model = StructuralModel(fingerprints, N_props)
         else:
             self.model = NonstructuralModel(self.n_compounds, N_props)
 
     def read_experiments(self):
         with pd.ExcelFile(self.xlsx_file) as reader:
-            self.reagents_df = pd.read_excel(
+            self.reagents_df: pd.DataFrame = pd.read_excel(
                 reader,
                 sheet_name="reagents",
-                dtype=(int, str, str),  # reagent_number  # reagent_name  # data_folder
+                dtype={
+                    "reagent_number": int,
+                    "CAS_number": str,
+                    "reagent_name": str,
+                    "SMILES": str,
+                    "data_folder": str,
+                },
             )
             self.reactions_df: pd.DataFrame = pd.read_excel(
                 reader,
                 sheet_name="reactions",
-                dtype=(
-                    int,  # compound1
-                    int,  # compound2
-                    int,  # compound3
-                    float,  # NMR_reactivity
-                    float,  # MS reactivity
-                    float,  # HPLC reactivity
-                    float,  # avg_expected_reactivity
-                    float,  # std_expected_reactivity
-                    "datetime",  # setup_time
-                    int,  # reactor_number
-                    str,  # data_folder
-                ),
+                dtype={
+                    "compound1": int,
+                    "compound2": int,
+                    "compound3": int,
+                    "NMR_reactivity": float,
+                    "MS reactivity": float,
+                    "HPLC reactivity": float,
+                    "avg_expected_reactivity": float,
+                    "std_expected_reactivity": float,
+                    "setup_time": str,
+                    # to support NaN
+                    "reactor_number": float,
+                    "data_folder": str,
+                },
+                parse_dates=["setup_time"],
             )
 
-    def write_experiments(self):
+    def write_experiments(self, backup=True):
+        if backup and path.exists(self.xlsx_file):
+            timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-")
+            dst_file, ext = path.splitext(self.xlsx_file)
+            dst_file = dst_file + timestamp + ext
+            copyfile(self.xlsx_file, dst_file)
         with pd.ExcelWriter(self.xlsx_file) as writer:
-            self.reagents_df.to_excel(writer, sheet_name="reagents")
-            self.reactions_df.to_excel(writer, sheet_name="reactions")
+            self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
+            self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
 
     def update(self, n_samples=500, sampler_params=None):
         """Update expected reactivities using probabilistic model.
@@ -185,3 +204,36 @@ class ExperimentManager:
             pass
 
         return callback
+
+    def populate(self):
+        """
+        Add entries for missing reactions to reaction dataframe.
+        """
+        all_compounds = self.reagents_df["reagent_number"]
+        n_compounds = len(all_compounds)
+        df = self.reactions_df
+        idx = len(df)
+        for i1, c1 in enumerate(all_compounds):
+            for i2, c2 in enumerate(all_compounds):
+                if i2 <= i1:
+                    continue
+                for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
+                    # check whether entry already exists
+                    if df.query(
+                        "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
+                    ).empty:
+                        # add missing entry and increment index
+                        self.reactions_df.loc[idx] = (
+                            c1,  # compound1
+                            c2,  # compound2
+                            c3,  # compound3
+                            None,  # NMR_reactivity
+                            None,  # MS_reactivity
+                            None,  # HPLC_reactivity
+                            None,  # avg_expected_reactivity
+                            None,  # std_expected_reactivity
+                            None,  # setup_time
+                            None,  # reactor_number
+                            None,  # data_folder
+                        )
+                        idx += 1
