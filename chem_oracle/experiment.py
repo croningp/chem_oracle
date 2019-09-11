@@ -17,9 +17,11 @@ from nmr_analyze.nn_model import full_nmr_process
 
 def parse_nmr_filename(filename: str) -> List[str]:
     folder, filename = path.split(filename)
-    name, ext = path.splitext(filename)
-    parts = name.split("-")
-    return [path.join(folder, part + ".csv") for part in parts]
+    foldername = path.basename(folder)
+    _, reagent_list = foldername.split("_")
+    parts = reagent_list.split("-")
+    print(f"Found parts {parts}.")
+    return parts
 
 
 def parse_ms_filename(filename: str) -> List[str]:
@@ -46,9 +48,6 @@ class ExperimentManager:
     def __init__(
         self,
         xlsx_file: str,
-        nmr_path: str,
-        ms_path: str,
-        hplc_path: str,
         N_props=4,
         structural_model=True,
         seed=None,
@@ -64,9 +63,6 @@ class ExperimentManager:
                 otherwise they are treated as black boxes. 
         """
         self.xlsx_file = xlsx_file
-        self.nmr_path = nmr_path
-        self.ms_path = ms_path
-        self.hplc_path = hplc_path
         self.N_props = N_props
 
         # seed RNG for reproducibility
@@ -143,7 +139,7 @@ class ExperimentManager:
         #     self.reactions_df["NMR_reactivity"].notna()
         #     | self.reactions_df["MS_reactivity"].notna()
         # )
-        self.model.condition(self.reactions_df, n_samples, sampler_params or {})
+        self.model.condition(self.reactions_df, n_samples, **(sampler_params or {}))
         trace = self.model.trace
         # caculate reactivity for binary reactions
         bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
@@ -173,6 +169,7 @@ class ExperimentManager:
     @property
     def nmr_callback(self):
         def callback(filename):
+            print(f"NMR callback {filename}")
             components = parse_nmr_filename(filename)
             if len(components) > 1:  # reaction mixture — evaluate reactivity
                 reactivity = nmr_is_reactive(filename, components)
