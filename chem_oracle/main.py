@@ -17,11 +17,11 @@ def main(xlsx_file: str, N_props=4, structural_model=True):
     logger.addHandler(handler)
 
     # set up file system monitors
-    nmr_handler = DataEventHandler(manager.nmr_callback)
-    ms_handler = DataEventHandler(manager.ms_callback)
+    nmr_handler = DataEventHandler(manager.nmr_callback, patterns=["**/data.1d"])
+    ms_handler = DataEventHandler(manager.ms_callback, patterns=["*.datx"])
     observer = Observer()
-    observer.schedule(nmr_handler, ".", recursive=False)
-    observer.schedule(ms_handler, ".", recursive=False)
+    observer.schedule(nmr_handler, ".", recursive=True)
+    observer.schedule(ms_handler, ".", recursive=True)
     observer.start()
     try:
         while True:
@@ -32,4 +32,4 @@ def main(xlsx_file: str, N_props=4, structural_model=True):
 
 
 if __name__ == "__main__":
-    main()
+    main("data/data.xlsx")
