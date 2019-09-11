@@ -7,3 +7,6 @@ matplotlib
 numpy
 scikit-learn
 scipy
+tensorflow
+xlrd
+openpyxl
