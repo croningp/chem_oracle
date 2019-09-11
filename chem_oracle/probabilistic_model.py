@@ -67,29 +67,28 @@ class NonstructuralModel:
             )
 
             nmr_obs_binary = pm.Bernoulli(
-                "reacts_binary",
+                "reacts_binary_nmr",
                 1 - bin_doesnt_react,
-                observed=bin_facts["NMR_reactivity"].values,
+                observed=bin_facts["NMR_reactivity"],
             )
             ms_obs_binary = pm.Bernoulli(
-                "reacts_binary",
+                "reacts_binary_ms",
                 1 - bin_doesnt_react,
-                observed=bin_facts["MS_reactivity"].values,
+                observed=bin_facts["MS_reactivity"],
             )
             nmr_obs_ternary = pm.Bernoulli(
-                "reacts_ternary",
+                "reacts_ternary_nmr",
                 1 - tri_no_react,
-                observed=tri_facts["NMR_reactivity"].values,
+                observed=tri_facts["NMR_reactivity"],
             )
             ms_obs_ternary = pm.Bernoulli(
-                "reacts_ternary",
+                "reacts_ternary_ms",
                 1 - tri_no_react,
-                observed=tri_facts["MS_reactivity"].values,
+                observed=tri_facts["MS_reactivity"],
             )
         return m
 
     def condition(self, facts, n_samples, **sampler_params):
-        print(f"training on {facts.shape}")
         m = self._pymc3_model(facts)
         with m:
             self.trace = pm.sample(n_samples, **sampler_params)
@@ -179,29 +178,28 @@ class StructuralModel:
             )
 
             nmr_obs_binary = pm.Bernoulli(
-                "reacts_binary",
+                "reacts_binary_nmr",
                 1 - bin_doesnt_react,
-                observed=bin_facts["NMR_reactivity"].values,
+                observed=bin_facts["NMR_reactivity"],
             )
             ms_obs_binary = pm.Bernoulli(
-                "reacts_binary",
+                "reacts_binary_ms",
                 1 - bin_doesnt_react,
-                observed=bin_facts["MS_reactivity"].values,
+                observed=bin_facts["MS_reactivity"],
             )
             nmr_obs_ternary = pm.Bernoulli(
-                "reacts_ternary",
+                "reacts_ternary_nmr",
                 1 - tri_no_react,
-                observed=tri_facts["NMR_reactivity"].values,
+                observed=tri_facts["NMR_reactivity"],
             )
             ms_obs_ternary = pm.Bernoulli(
-                "reacts_ternary",
+                "reacts_ternary_ms",
                 1 - tri_no_react,
-                observed=tri_facts["MS_reactivity"].values,
+                observed=tri_facts["MS_reactivity"],
             )
         return m
 
     def condition(self, facts, n_samples, **sampler_params):
-        print(f"training on {facts.shape}")
         m = self._pymc3_model(facts)
         with m:
             self.trace = pm.sample(n_samples, **sampler_params)
