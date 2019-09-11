@@ -97,6 +97,7 @@ class ExperimentManager:
                     "reagent_number": int,
                     "CAS_number": str,
                     "reagent_name": str,
+                    "flask_name": str,
                     "SMILES": str,
                     "data_folder": str,
                 },
