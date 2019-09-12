@@ -128,7 +128,7 @@ class ExperimentManager:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
 
-    def update(self, n_samples=500, **sampler_params):
+    def update(self, n_samples=250, tune=250, chains=8, **sampler_params):
         """Update expected reactivities using probabilistic model.
         
         Args:
@@ -139,7 +139,7 @@ class ExperimentManager:
         #     self.reactions_df["NMR_reactivity"].notna()
         #     | self.reactions_df["MS_reactivity"].notna()
         # )
-        self.model.condition(self.reactions_df, n_samples, **sampler_params)
+        self.model.condition(self.reactions_df, n_samples, tune=tune, **sampler_params)
         trace = self.model.trace
         # caculate reactivity for binary reactions
         bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
@@ -155,11 +155,11 @@ class ExperimentManager:
         df.loc[
             df["compound3"] == -1,
             ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack(bin_avg, bin_std)
+        ] = np.stack([bin_avg, bin_std]).T
         df.loc[
             df["compound3"] != -1,
             ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack(tri_avg, tri_std)
+        ] = np.stack([tri_avg, tri_std]).T
         self.write_experiments()
 
     def get_spectrum(self, reagent_number: int):
