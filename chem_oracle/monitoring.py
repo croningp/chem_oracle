@@ -22,7 +22,7 @@ class DataEventHandler(PatternMatchingEventHandler):
         self.callback = callback
         self.logger = logging.getLogger("chem_oracle.NMR_monitor")
 
-    def on_any_event(self, event):
-        super().on_any_event(event)
+    def on_created(self, event):
+        super().on_created(event)
         self.logger.debug(f"Filesystem event {event}.")
         self.callback(event.src_path)

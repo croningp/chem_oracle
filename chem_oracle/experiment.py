@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 from os import path
 from shutil import copyfile
-from typing import List, Union
+from typing import List, Union, Dict
 
 import numpy as np
 import pandas as pd
@@ -15,33 +15,61 @@ from ms_analyze.ms import MassSpectra
 from nmr_analyze.nn_model import full_nmr_process
 
 
-def parse_nmr_filename(filename: str) -> List[str]:
-    folder, filename = path.split(filename)
+def parse_nmr_filename(filename: str) -> Dict:
+    """
+    Parse the full path of an NMR data file (typically `data.1d`).
+    
+    Args:
+        filename (str): Full path of NMR data file. The parent folder
+        is assumed to follow the format below:
+        f"{reaction_number}_{reagent1}-{reagent2}-{reagent3}_{reactor_number}_{nucleus}"
+        Numbers may be zero-padded.
+    """
+    folder, basename = path.split(filename)
     foldername = path.basename(folder)
-    _, reagent_list = foldername.split("_")
-    parts = reagent_list.split("-")
-    print(f"Found parts {parts}.")
-    return parts
+    reaction_number, reagent_list, reactor_number, nucleus = foldername.split("_")
+    reagents = [int(reagent) for reagent in reagent_list.split("-")]
+    logging.debug(f"Parsing NMR folder {foldername}; found reagents {reagents}.")
+    return {
+        "reaction_number": int(reaction_number),
+        "reagents": reagents,
+        "reactor_number": int(reactor_number),
+        "nucleus": nucleus,
+    }
 
 
 def parse_ms_filename(filename: str) -> List[str]:
-    folder, filename = path.split(filename)
-    name, ext = path.splitext(filename)
-    parts = name.split("-")
-    return [path.join(folder, part + ".csv") for part in parts]
+    """
+    Parse the full path of an MS data file (typically `*.datx`).
+    
+    Args:
+        filename (str): Full path of MS data file. The parent folder
+        is assumed to follow the format below:
+        f"{reaction_number}_{reagent1}-{reagent2}-{reagent3}_{reactor_number}"
+        Numbers may be zero-padded.
+    """
+    folder, basename = path.split(filename)
+    foldername = path.basename(folder)
+    reaction_number, reagent_list, reactor_number = foldername.split("_")
+    reagents = [int(reagent) for reagent in reagent_list.split("-")]
+    logging.debug(f"Parsing MS folder {foldername}; found reagents {reagents}.")
+    return {
+        "reaction_number": int(reaction_number),
+        "reagents": reagents,
+        "reactor_number": int(reactor_number),
+    }
 
 
-def ms_is_reactive(
-    ms: MassSpectra, starting_materials: List[MassSpectra], max_error: float = 0.2
-):
+def ms_is_reactive(filename, starting_materials, max_error: float = 0.2):
     components = ms.find_components_adaptive(
         max_error=max_error, min_components=len(starting_materials)
     )
     return len(components) > len(starting_materials)
 
 
-def nmr_is_reactive(*args):
-    pass
+def nmr_is_reactive(filename, starting_materials):
+    data_dir = path.dirname(path.dirname(filename))
+    # TODO: integrate NMR
 
 
 class ExperimentManager:
@@ -54,10 +82,12 @@ class ExperimentManager:
         fingerprint_bits=256,
         seed=None,
     ):
-        """Initialize ExperimentManager with given Excel workbook.
+        """
+        Initialize ExperimentManager with given Excel workbook.
         
         Args:
             xlsx_file (str): Name of Excel workbook to read current state from.
+                Experiment data files are expected to be in the same folder.
             N_props (int): Number of abstract properties to use in probabilistic
                 model
             structural_model (bool): If set to `True`, a model representing
@@ -66,6 +96,8 @@ class ExperimentManager:
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props
+
+        self.data_root = path.dirname(xlsx_file)
 
         # seed RNG for reproducibility
         random.seed(seed)
@@ -106,6 +138,8 @@ class ExperimentManager:
                 reader,
                 sheet_name="reactions",
                 dtype={
+                    # to support NaN
+                    "reaction_number": float,
                     "compound1": int,
                     "compound2": int,
                     "compound3": int,
@@ -115,7 +149,6 @@ class ExperimentManager:
                     "avg_expected_reactivity": float,
                     "std_expected_reactivity": float,
                     "setup_time": str,
-                    # to support NaN
                     "reactor_number": float,
                     "data_folder": str,
                 },
@@ -165,36 +198,42 @@ class ExperimentManager:
     @property
     def nmr_callback(self):
         def callback(filename):
-            print(f"NMR callback {filename}")
-            components = parse_nmr_filename(filename)
+            self.logger.info(f"New NMR data found at {filename}")
+            file_info = parse_nmr_filename(filename)
+            components = file_info["reagents"]
             if len(components) > 1:  # reaction mixture — evaluate reactivity
                 reactivity = nmr_is_reactive(filename, components)
                 rdf = self.reactions_df
-                rdf.loc[
+                selector = (
                     (rdf["compound1"] == components[0])
                     & (rdf["compound2"] == components[1])
-                    & (rdf["compound3"] == components[2]),
-                    "NMR_reactivity",
-                ] = reactivity
+                    & (rdf["compound3"] == components[2])
+                )
+                rdf.loc[selector, "reaction_number"] = file_info["reaction_number"]
+                rdf.loc[selector, "reactor_number"] = file_info["reactor_number"]
+                rdf.loc[selector, "NMR_reactivity"] = reactivity
                 self.update()
-
-        self.write_experiments()
+                self.write_experiments()
 
         return callback
 
     @property
     def ms_callback(self):
         def callback(filename):
-            components = parse_ms_filename(filename)
+            self.logger.info(f"New MS data found at {filename}")
+            file_info = parse_ms_filename(filename)
+            components = file_info["reagents"]
             if len(components) > 1:  # reaction mixture — evaluate reactivity
                 reactivity = ms_is_reactive(filename, components)
                 rdf = self.reactions_df
-                rdf.loc[
+                selector = (
                     (rdf["compound1"] == components[0])
                     & (rdf["compound2"] == components[1])
-                    & (rdf["compound3"] == components[2]),
-                    "MS_reactivity",
-                ] = reactivity
+                    & (rdf["compound3"] == components[2])
+                )
+                rdf.loc[selector, "reaction_number"] = file_info["reaction_number"]
+                rdf.loc[selector, "reactor_number"] = file_info["reactor_number"]
+                rdf.loc[selector, "MS_reactivity"] = reactivity
                 self.update()
                 self.write_experiments()
 
@@ -203,6 +242,7 @@ class ExperimentManager:
     def populate(self):
         """
         Add entries for missing reactions to reaction dataframe.
+        Existing entries are left intact.
         """
         all_compounds = self.reagents_df["reagent_number"]
         n_compounds = len(all_compounds)
@@ -219,6 +259,7 @@ class ExperimentManager:
                     ).empty:
                         # add missing entry and increment index
                         self.reactions_df.loc[idx] = (
+                            None,  # reactor_number
                             c1,  # compound1
                             c2,  # compound2
                             c3,  # compound3

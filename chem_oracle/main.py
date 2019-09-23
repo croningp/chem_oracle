@@ -1,4 +1,5 @@
 import time
+import sys
 import logging
 
 from watchdog.observers import Observer
@@ -32,4 +33,4 @@ def main(xlsx_file: str, N_props=4, structural_model=True):
 
 
 if __name__ == "__main__":
-    main("data/data.xlsx")
+    main(sys.argv[1])
