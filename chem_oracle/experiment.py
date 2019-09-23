@@ -60,7 +60,7 @@ class ExperimentManager:
                 model
             structural_model (bool): If set to `True`, a model representing
                 each compound using a structural fingerprint string is used;
-                otherwise they are treated as black boxes. 
+                otherwise they are treated as black boxes.
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props

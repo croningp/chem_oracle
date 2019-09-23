@@ -3,9 +3,9 @@ import pandas as pd
 from matplotlib import pyplot as plt
 
 
-file_path = 'Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\20180418-1809-photochemical_space\\0013\\0013-post-reactor2-NMR-20180419-0545'
+file_path = "Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\20180418-1809-photochemical_space\\0013\\0013-post-reactor2-NMR-20180419-0545"
 
-reagents = ['phenylhydrazine', 'glycidyl_propargyl_ether']
+reagents = ["phenylhydrazine", "glycidyl_propargyl_ether"]
 
 # data = raw_nmr_to_dataframe(file_path, reagents)
 #

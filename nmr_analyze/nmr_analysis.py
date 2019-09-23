@@ -12,25 +12,24 @@ import datetime
 import shutil
 
 
-def default_processing(s, solvent = 'dmso'):
+def default_processing(s, solvent="dmso"):
     s.fft()
     s.gen_x_scale()
     s.phase(0, 0)
-    if solvent.lower() == 'mecn':
+    if solvent.lower() == "mecn":
         s.reference(1.96)
-    elif solvent.lower() == 'dmso':
+    elif solvent.lower() == "dmso":
         s.reference(2.50)
     elif solvent.lower() == "cdcl3":
         s.reference(7.26)
     elif solvent.lower() == "dioxane":
         s.reference(3.60)
-    elif solvent.lower() == 'methanol':
+    elif solvent.lower() == "methanol":
         s.reference(3.34)
     s.normalize()
     # s.remove_solvent()
     # s.remove_satellites()
     # s.remove_water()
-
 
     s.cut(0, 12)
     s.remove_from_sat_down()
@@ -42,6 +41,7 @@ def getIPAddresses():
     from ctypes import Structure, windll, sizeof
     from ctypes import POINTER, byref
     from ctypes import c_ulong, c_uint, c_ubyte, c_char
+
     MAX_ADAPTER_DESCRIPTION_LENGTH = 128
     MAX_ADAPTER_NAME_LENGTH = 256
     MAX_ADAPTER_ADDRESS_LENGTH = 8
@@ -54,7 +54,8 @@ def getIPAddresses():
         ("next", LP_IP_ADDR_STRING),
         ("ipAddress", c_char * 16),
         ("ipMask", c_char * 16),
-        ("context", c_ulong)]
+        ("context", c_ulong),
+    ]
 
     class IP_ADAPTER_INFO(Structure):
         pass
@@ -78,7 +79,8 @@ def getIPAddresses():
         ("primaryWinsServer", IP_ADDR_STRING),
         ("secondaryWinsServer", IP_ADDR_STRING),
         ("leaseObtained", c_ulong),
-        ("leaseExpires", c_ulong)]
+        ("leaseExpires", c_ulong),
+    ]
     GetAdaptersInfo = windll.iphlpapi.GetAdaptersInfo
     GetAdaptersInfo.restype = c_ulong
     GetAdaptersInfo.argtypes = [LP_IP_ADAPTER_INFO, POINTER(c_ulong)]
@@ -270,7 +272,8 @@ def getIPAddresses():
 #         xmlresp.getchildren()[0].getchildren()[0].tag
 #
 
-class nmr_spectrum():
+
+class nmr_spectrum:
     def __init__(self, path=None, verbose=False, X_scale=[], spectrum=[]):
         # self.nmr_dir = nmr_dir
         self.verbose = verbose
@@ -280,19 +283,20 @@ class nmr_spectrum():
 
         if path != None:
             # read spectrum parameters
-            spectrum_parameters = open(join(path, 'acqu.par'), 'r')
+            spectrum_parameters = open(join(path, "acqu.par"), "r")
             parameters = spectrum_parameters.readlines()
             self.param_dict = {}
             for param in parameters:
-                self.param_dict[param.split('= ')[0].strip(' ')] = \
-                    param.split('= ')[1].strip('\n')
+                self.param_dict[param.split("= ")[0].strip(" ")] = param.split("= ")[
+                    1
+                ].strip("\n")
             if self.verbose:
                 print(self.param_dict)
 
             # open file with nmr data
-            spectrum_path = join(path, 'data.1d')
+            spectrum_path = join(path, "data.1d")
             # open binary file with spectrum
-            nmr_data = open(spectrum_path, mode='rb')
+            nmr_data = open(spectrum_path, mode="rb")
             # read first eight bytes
             spectrum = []
             # unpack the data
@@ -300,11 +304,11 @@ class nmr_spectrum():
                 data = nmr_data.read(4)
                 if not data:
                     break
-                spectrum.append(struct.unpack('<f', data))
+                spectrum.append(struct.unpack("<f", data))
             # remove fisrt eight points and divide data into three parts
             lenght = int(len(spectrum[8:]) / 3)
             # print (type(spectrum))
-            fid = spectrum[lenght + 8:]
+            fid = spectrum[lenght + 8 :]
             self.gamma = 1 / max(spectrum[8:lenght])[0]
             fid_real = []
             fid_img = []
@@ -316,8 +320,7 @@ class nmr_spectrum():
                 self.fid_complex.append(np.complex(fid_real[i], fid_img[i] * -1))
 
     def fft(self):
-        self.spectrum = np.fft.fft(self.fid_complex,
-                                   n=1 * len(self.fid_complex))
+        self.spectrum = np.fft.fft(self.fid_complex, n=1 * len(self.fid_complex))
         self.spectrum = np.fft.fftshift(self.spectrum)
         self.spectrum_length = len(self.spectrum)
 
@@ -329,10 +332,12 @@ class nmr_spectrum():
         # phase spectrum
         for (i, point) in enumerate(self.spectrum):
             correction = i * phase1_rad / self.spectrum_length + phase0_rad
-            real_part = np.cos(correction) * point.real - \
-                        np.sin(correction) * point.imag
-            imag_part = np.cos(correction) * point.imag - \
-                        np.sin(correction) * point.real
+            real_part = (
+                np.cos(correction) * point.real - np.sin(correction) * point.imag
+            )
+            imag_part = (
+                np.cos(correction) * point.imag - np.sin(correction) * point.real
+            )
             phased_spectrum.append(np.complex(real_part, imag_part))
         self.spectrum = phased_spectrum
 
@@ -345,21 +350,28 @@ class nmr_spectrum():
         plt.show()
 
     def integrate(self, low_ppm, high_ppm):
-        peak = [self.spectrum[i].real for i, v in
-                enumerate(self.X_scale) if (v > low_ppm and v < high_ppm)]
+        peak = [
+            self.spectrum[i].real
+            for i, v in enumerate(self.X_scale)
+            if (v > low_ppm and v < high_ppm)
+        ]
         return np.trapz(peak)
 
     def gen_x_scale(self):
         self.X_scale = []
         for (i, point) in enumerate(self.spectrum):
-            x = (i * 5000. / self.spectrum_length +
-                 float(self.param_dict['lowestFrequency'])) / \
-                float(self.param_dict['b1Freq'])
+            x = (
+                i * 5000.0 / self.spectrum_length
+                + float(self.param_dict["lowestFrequency"])
+            ) / float(self.param_dict["b1Freq"])
             self.X_scale.append(x)
 
     def cut(self, low_ppm=5, high_ppm=12):
-        self.spectrum = [self.spectrum[i] for (i, p) in
-                         enumerate(self.X_scale) if (p > low_ppm) and (p < high_ppm)]
+        self.spectrum = [
+            self.spectrum[i]
+            for (i, p) in enumerate(self.X_scale)
+            if (p > low_ppm) and (p < high_ppm)
+        ]
         self.X_scale = [i for i in self.X_scale if (i > low_ppm) and (i < high_ppm)]
 
     def autophase(self):
@@ -388,7 +400,7 @@ class nmr_spectrum():
             # print entropy, penalty
             return entropy + penalty
 
-        new_phase = fmin(entropy, [0, 0], )
+        new_phase = fmin(entropy, [0, 0])
         self.phase(new_phase[0], new_phase[1])
 
     def baseline_als(self, lam, p, niter=10):
@@ -456,15 +468,16 @@ class nmr_spectrum():
         # for i in w:
         #     self.spectrum[i] = 0.000
 
-
     def find_peaks(self, thresh=0.3, min_dist=0.5):
-        thresh *= (np.max(self.spectrum) - np.min(self.spectrum))
+        thresh *= np.max(self.spectrum) - np.min(self.spectrum)
         smooth = signal.savgol_filter(self.spectrum, 3, 2)
         dy = np.diff(smooth)
 
-        peaks = np.where((np.hstack([dy, 0.]) < 0) &
-                         (np.hstack([0., dy]) > 0) &
-                         (self.spectrum > thresh))[0]
+        peaks = np.where(
+            (np.hstack([dy, 0.0]) < 0)
+            & (np.hstack([0.0, dy]) > 0)
+            & (self.spectrum > thresh)
+        )[0]
 
         # peaks = signal.find_peaks_cwt(self.spectrum,
         # np.arange(70,90), noise_perc = 20)
@@ -506,8 +519,9 @@ class nmr_spectrum():
 
     def fit_lorentzian(self, x, y):
         initial = [x, y, 0.07]
-        params, pcov = curve_fit(self.lorentzian, self.X_scale,
-                                 self.spectrum, initial, maxfev=5000)
+        params, pcov = curve_fit(
+            self.lorentzian, self.X_scale, self.spectrum, initial, maxfev=5000
+        )
         return params
 
     def autointegrate(self, lowb, highb, show=False):
@@ -518,7 +532,10 @@ class nmr_spectrum():
         # find peak having the highest intensity
         peak = sorted(self.find_peaks(thresh=0.2), key=lambda x: x[1], reverse=True)[0]
         fit_params = self.fit_lorentzian(peak[0], peak[1])
-        fitted = [self.lorentzian(i, fit_params[0], fit_params[1], fit_params[2]) for i in self.X_scale]
+        fitted = [
+            self.lorentzian(i, fit_params[0], fit_params[1], fit_params[2])
+            for i in self.X_scale
+        ]
         area = np.trapz(fitted)
         # if peak has a half width larger then 0.2 ppm return 0
         # fitting process probably failed
@@ -542,11 +559,13 @@ class nmr_spectrum():
 
     def __sub__(self, other):
         from operator import sub
+
         new_spectrum = map(sub, self.spectrum, other.spectrum)
         return nmr_spectrum(X_scale=self.X_scale, spectrum=new_spectrum)
 
     def __add__(self, other):
         from operator import add
+
         new_spectrum = map(add, self.spectrum, other.spectrum)
         return nmr_spectrum(X_scale=self.X_scale, spectrum=new_spectrum)
 
@@ -563,10 +582,11 @@ class nmr_spectrum():
         self.X_scale = [i + diff for i in self.X_scale]
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
-
-    spectrum = nmr_spectrum('Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\20170901-1554-optimization\\164-NMR-20170903-0727')
+    spectrum = nmr_spectrum(
+        "Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\20170901-1554-optimization\\164-NMR-20170903-0727"
+    )
     default_processing(spectrum)
     # spectrum.autointegrate()
 
@@ -605,5 +625,3 @@ if __name__ == '__main__':
 ##    plt.plot(s3.X_scale, s3.spectrum)
 ##    plt.plot(s4.X_scale, s4.spectrum)
 ##    plt.show()
-
-
