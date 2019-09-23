@@ -50,6 +50,8 @@ class ExperimentManager:
         xlsx_file: str,
         N_props=4,
         structural_model=True,
+        fingerprint_radius=1,
+        fingerprint_bits=256,
         seed=None,
     ):
         """Initialize ExperimentManager with given Excel workbook.
@@ -77,10 +79,12 @@ class ExperimentManager:
 
         if structural_model:
             # calculate fingerprints
-            mols = [MolFromSmiles(smiles) for smiles in self.reagents_df["SMILES"]]
+            self.mols = [MolFromSmiles(smiles) for smiles in self.reagents_df["SMILES"]]
             # TODO: expose this as a parameter
-            fingerprints = morgan_matrix(mols, radius=3, nbits=128)
-            self.model = StructuralModel(fingerprints, N_props)
+            self.fingerprints = morgan_matrix(
+                self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
+            )
+            self.model = StructuralModel(self.fingerprints, N_props)
         else:
             self.model = NonstructuralModel(self.n_compounds, N_props)
 
@@ -128,18 +132,13 @@ class ExperimentManager:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
 
-    def update(self, n_samples=250, tune=250, chains=8, **sampler_params):
+    def update(self, n_samples=250, variational=False, **pymc3_params):
         """Update expected reactivities using probabilistic model.
         
         Args:
             n_samples (int): Number of samples in each MCMC chain.
         """
-        # # select reactions with at leasty observation
-        # selector = (
-        #     self.reactions_df["NMR_reactivity"].notna()
-        #     | self.reactions_df["MS_reactivity"].notna()
-        # )
-        self.model.condition(self.reactions_df, n_samples, tune=tune, **sampler_params)
+        self.model.condition(self.reactions_df, n_samples, variational, **pymc3_params)
         trace = self.model.trace
         # caculate reactivity for binary reactions
         bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
@@ -148,8 +147,6 @@ class ExperimentManager:
         tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
         tri_std = np.std(trace["tri_doesnt_react"], axis=0)
 
-        # sync state before writing to avoid data loss
-        self.read_experiments()
         df = self.reactions_df
         # update dataframe with calculated reactivities
         df.loc[
@@ -160,7 +157,6 @@ class ExperimentManager:
             df["compound3"] != -1,
             ["avg_expected_reactivity", "std_expected_reactivity"],
         ] = np.stack([tri_avg, tri_std]).T
-        self.write_experiments()
 
     def get_spectrum(self, reagent_number: int):
         if reagent_number == -1:
@@ -182,6 +178,8 @@ class ExperimentManager:
                 ] = reactivity
                 self.update()
 
+        self.write_experiments()
+
         return callback
 
     @property
@@ -197,9 +195,8 @@ class ExperimentManager:
                     & (rdf["compound3"] == components[2]),
                     "MS_reactivity",
                 ] = reactivity
-                self.write_experiments()
                 self.update()
-            pass
+                self.write_experiments()
 
         return callback
 

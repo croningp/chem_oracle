@@ -6,7 +6,7 @@ import pandas as pd
 import pymc3 as pm
 import theano.tensor as tt
 from matplotlib import pyplot as plt
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, Draw
 
 
 def indices(N: int, ndims: int) -> np.ndarray:

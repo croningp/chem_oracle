@@ -5,12 +5,25 @@ import theano.tensor as tt
 from .util import triangular_tensor, tri_doesnt_react, indices
 
 
-class NonstructuralModel:
-    def __init__(self, ncompounds, N=4):
-        """fingerprints: Matrix of Morgan fingerprints for reagents."""
+class Model:
+    def __init__(self, N):
         self.N = N
         self.bin_indices = indices(N, 2)
         self.tri_indices = indices(N, 3)
+
+    def condition(self, facts, n_samples, variational, **pymc3_params):
+        m = self._pymc3_model(facts)
+        with m:
+            if variational:
+                self.approx = pm.fit(**pymc3_params)
+                self.trace = self.approx.sample(n_samples)
+            else:
+                self.trace = pm.sample(n_samples, **pymc3_params)
+
+
+class NonstructuralModel(Model):
+    def __init__(self, ncompounds, N=4):
+        super().__init__(N)
         self.ncompounds = ncompounds
 
     def _pymc3_model(self, facts):
@@ -88,13 +101,8 @@ class NonstructuralModel:
             )
         return m
 
-    def condition(self, facts, n_samples, **sampler_params):
-        m = self._pymc3_model(facts)
-        with m:
-            self.trace = pm.sample(n_samples, **sampler_params)
 
-
-class StructuralModel:
+class StructuralModel(Model):
     def __init__(self, fingerprint_matrix: np.ndarray, N: int = 4):
         """Bayesian reactivity model informed by structural fingerprints.
 
@@ -105,9 +113,7 @@ class StructuralModel:
             N (int, optional): Number of abstract properties. Defaults to 4.
         """
         # """fingerprints: Matrix of Morgan fingerprints for reagents."""
-        self.N = N
-        self.bin_indices = indices(N, 2)
-        self.tri_indices = indices(N, 3)
+        super().__init__(N)
         self.fingerprints = tt._shared(fingerprint_matrix)
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
@@ -198,8 +204,3 @@ class StructuralModel:
                 observed=tri_facts["MS_reactivity"],
             )
         return m
-
-    def condition(self, facts, n_samples, **sampler_params):
-        m = self._pymc3_model(facts)
-        with m:
-            self.trace = pm.sample(n_samples, **sampler_params)
