@@ -4,7 +4,7 @@ import math
 import pandas as pd
 from matplotlib import pyplot as plt
 
-import nmr_analyze.nmr_analysis as na
+import nmr_analysis as na
 
 spec_lenght = 4878
 
@@ -17,30 +17,27 @@ def get_nmr(file_path):
     return x, y
 
 
-def get_theoretical_nmr(reagents):
-    reagent_fold = "Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\002_photo_space\\reagents\\"
+def get_theoretical_nmr(reagents, reagent_fold):
     theoretical = np.zeros(spec_lenght)
     reagents_filt = []
-    volume = len(reagents) * 2
+    volume = len(reagents)
     for reagent in reagents:
-        reag_nmr = (
-            np.loadtxt(reagent_fold + reagent + "-NMR-0.csv", delimiter=",") * 2
-        )  # multiplying by the volume of each reagent
-        theoretical = theoretical + reag_nmr[:, 1]
+        _, reag_nmr = get_nmr(reagent_fold + reagent+'-NMR-0') #we are interested in the y data, multiplied by the volume used
+        theoretical = theoretical + (reag_nmr)
         reagents_filt.append(reagent)
     theoretical_norm = theoretical / volume
     theoretical_norm[0:1550] = np.zeros(1550)
     return theoretical_norm
 
 
-def raw_nmr_to_dataframe(file_path, reagents):
+def raw_nmr_to_dataframe(file_path, reagents, reagent_folder):
     nmr_datax, nmr_datay = get_nmr(file_path)
     if len(nmr_datay) < 4878:
         nmr_y = nmr_datay
         for i in range(4878 - len(nmr_datay)):
             nmr_y.append(nmr_datay[0])
         nmr_datay = np.array(nmr_y)
-    theoretical = get_theoretical_nmr(reagents)
+    theoretical = get_theoretical_nmr(reagents, reagent_folder)
     if len(theoretical) < 4878:
         theo_list = theoretical.tolist()
         for i in range(4878 - len(theoretical)):

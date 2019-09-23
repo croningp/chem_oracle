@@ -1,7 +1,7 @@
 import tensorflow as tf
 import math
 import numpy as np
-from nmr_analyze.utils import *
+from utils import *
 from matplotlib import pyplot as plt
 
 
@@ -318,7 +318,7 @@ class NMR_nn:
         return prediction
 
 
-def full_nmr_process(file_path, reagents):
+def full_nmr_process(file_path, reagents, reagent_folder):
     """
 
     :param file_path: folder of raw nmr data
@@ -326,7 +326,7 @@ def full_nmr_process(file_path, reagents):
     in utils.
     :return: value of rectivity between 0 and 1
     """
-    data = raw_nmr_to_dataframe(file_path, reagents)
+    data = raw_nmr_to_dataframe(file_path, reagents, reagent_folder)
     data_x, data_y = read_data(data)
     nn = NMR_nn()
     reactivity = nn.predict(data_x)
@@ -337,5 +337,6 @@ def full_nmr_process(file_path, reagents):
 if __name__ == "__main__":
     file_path = "Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\20180418-1809-photochemical_space\\0013\\0013-post-reactor2-NMR-20180419-0545"
     reagents = ["phenylhydrazine", "glycidyl_propargyl_ether"]
+    reagent_folder = "Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\002_photo_space\\reagents\\"
 
-    print(full_nmr_process(file_path, reagents))
+    print(full_nmr_process(file_path, reagents, reagent_folder))
