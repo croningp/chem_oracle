@@ -79,24 +79,28 @@ class NonstructuralModel(Model):
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
 
-            nmr_obs_binary = pm.Bernoulli(
+            nmr_obs_binary = pm.Normal(
                 "reacts_binary_nmr",
-                1 - bin_doesnt_react,
+                mu=1 - bin_doesnt_react,
+                sd=0.1,
                 observed=bin_facts["NMR_reactivity"],
             )
-            ms_obs_binary = pm.Bernoulli(
+            ms_obs_binary = pm.Normal(
                 "reacts_binary_ms",
-                1 - bin_doesnt_react,
+                mu=1 - bin_doesnt_react,
+                sd=0.1,
                 observed=bin_facts["MS_reactivity"],
             )
-            nmr_obs_ternary = pm.Bernoulli(
+            nmr_obs_ternary = pm.Normal(
                 "reacts_ternary_nmr",
-                1 - tri_no_react,
+                mu=1 - tri_no_react,
+                sd=0.1,
                 observed=tri_facts["NMR_reactivity"],
             )
-            ms_obs_ternary = pm.Bernoulli(
+            ms_obs_ternary = pm.Normal(
                 "reacts_ternary_ms",
-                1 - tri_no_react,
+                mu=1 - tri_no_react,
+                sd=0.1,
                 observed=tri_facts["MS_reactivity"],
             )
         return m
@@ -131,9 +135,10 @@ class StructuralModel(Model):
             tt._shared(tri_facts["compound3"].values),
         )
         with pm.Model() as m:
-            mem = pm.Uniform(
-                "mem", lower=0.0, upper=1.0, shape=(self.fingerprint_length, self.N)
+            mem = pm.Beta(
+                "mem", alpha=1.0, beta=3.0, shape=(self.fingerprint_length, self.N)
             )
+
             bin_reactivities = pm.Uniform(
                 "bin_reactivities",
                 lower=0.0,
@@ -183,24 +188,28 @@ class StructuralModel(Model):
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
 
-            nmr_obs_binary = pm.Bernoulli(
+            nmr_obs_binary = pm.Normal(
                 "reacts_binary_nmr",
-                1 - bin_doesnt_react,
+                mu=1 - bin_doesnt_react,
+                sd=0.05,
                 observed=bin_facts["NMR_reactivity"],
             )
-            ms_obs_binary = pm.Bernoulli(
+            ms_obs_binary = pm.Normal(
                 "reacts_binary_ms",
-                1 - bin_doesnt_react,
+                mu=1 - bin_doesnt_react,
+                sd=0.05,
                 observed=bin_facts["MS_reactivity"],
             )
-            nmr_obs_ternary = pm.Bernoulli(
+            nmr_obs_ternary = pm.Normal(
                 "reacts_ternary_nmr",
-                1 - tri_no_react,
+                mu=1 - tri_no_react,
+                sd=0.05,
                 observed=tri_facts["NMR_reactivity"],
             )
-            ms_obs_ternary = pm.Bernoulli(
+            ms_obs_ternary = pm.Normal(
                 "reacts_ternary_ms",
-                1 - tri_no_react,
+                mu=1 - tri_no_react,
+                sd=0.05,
                 observed=tri_facts["MS_reactivity"],
             )
         return m
