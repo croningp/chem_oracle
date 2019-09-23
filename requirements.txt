@@ -10,3 +10,11 @@ scipy
 tensorflow
 xlrd
 openpyxl
+arviz
+pymc3
+tensorflow
+scipy
+scikit-learn
+numpy
+matplotlib
+theano
