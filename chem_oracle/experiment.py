@@ -69,7 +69,7 @@ def ms_is_reactive(filename, starting_materials, max_error: float = 0.2):
 
 def nmr_is_reactive(filename, starting_materials):
     data_dir = path.dirname(path.dirname(filename))
-    # TODO: integrate NMR
+    return full_nmr_process(filename, starting_materials, data_dir) > 0.5
 
 
 class ExperimentManager:
