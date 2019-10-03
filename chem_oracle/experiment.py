@@ -40,7 +40,7 @@ def parse_nmr_filename(filename: str) -> Dict:
 
 def parse_ms_filename(filename: str) -> List[str]:
     """
-    Parse the full path of an MS data file (typically `*.datx`).
+    Parse the full path of an MS data file (typically `*.npz`).
     
     Args:
         filename (str): Full path of MS data file. The parent folder
@@ -48,9 +48,9 @@ def parse_ms_filename(filename: str) -> List[str]:
         f"{reaction_number}_{reagent1}-{reagent2}-{reagent3}_{reactor_number}"
         Numbers may be zero-padded.
     """
-    folder, basename = path.split(filename)
-    foldername = path.basename(folder)
-    reaction_number, reagent_list, reactor_number = foldername.split("_")
+    basename = path.basename(filename)
+    experiment_name, _ = path.splitext(basename)
+    reaction_number, reagent_list, reactor_number = experiment_name.split("_")
     reagents = [int(reagent) for reagent in reagent_list.split("-")]
     logging.debug(f"Parsing MS folder {foldername}; found reagents {reagents}.")
     return {
@@ -96,8 +96,6 @@ class ExperimentManager:
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props
-
-        self.data_root = path.dirname(xlsx_file)
 
         # seed RNG for reproducibility
         random.seed(seed)

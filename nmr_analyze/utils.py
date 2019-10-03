@@ -3,6 +3,7 @@ from scipy import signal
 import math
 import pandas as pd
 from matplotlib import pyplot as plt
+from os import path
 
 import nmr_analysis as na
 
@@ -16,12 +17,12 @@ def get_nmr(file_path):
     return x, y
 
 
-def get_theoretical_nmr(reagents, reagent_fold):
+def get_theoretical_nmr(reagents, reagent_folder):
     theoretical = np.zeros(spec_lenght)
     reagents_filt = []
     volume = len(reagents)
     for reagent in reagents:
-        _, reag_nmr = get_nmr(reagent_fold + reagent) #we are interested in the y data, multiplied by the volume used
+        _, reag_nmr = get_nmr(path.join(reagent_folder, reagent)) #we are interested in the y data, multiplied by the volume used
         theoretical = theoretical + (reag_nmr)
         reagents_filt.append(reagent)
     theoretical_norm = theoretical / volume
