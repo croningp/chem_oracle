@@ -1,10 +1,8 @@
 import logging
-from collections import namedtuple
+from os import path
+from typing import Callable, Any
 
 from watchdog.events import PatternMatchingEventHandler
-from os import path
-from ms_analyze.ms import MassSpectra
-from typing import NamedTuple, Callable, Any
 
 
 def parse_filename(filename: str):
