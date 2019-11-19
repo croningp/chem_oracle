@@ -98,6 +98,7 @@ def getIPAddresses():
                 if not adNode:
                     break
 
+
 class nmr_spectrum:
     def __init__(self, path=None, verbose=False, X_scale=[], spectrum=[]):
         # self.nmr_dir = nmr_dir

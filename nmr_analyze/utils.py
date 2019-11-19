@@ -5,9 +5,10 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from os import path
 
-import nmr_analysis as na
+import nmr_analyze.nmr_analysis as na
 
 spec_lenght = 4878
+
 
 def get_nmr(file_path):
     spectrum = na.nmr_spectrum(file_path)
@@ -22,12 +23,15 @@ def get_theoretical_nmr(reagents, reagent_folder):
     reagents_filt = []
     volume = len(reagents)
     for reagent in reagents:
-        _, reag_nmr = get_nmr(path.join(reagent_folder, reagent)) #we are interested in the y data, multiplied by the volume used
+        _, reag_nmr = get_nmr(
+            path.join(reagent_folder, reagent)
+        )  # we are interested in the y data, multiplied by the volume used
         theoretical = theoretical + (reag_nmr)
         reagents_filt.append(reagent)
     theoretical_norm = theoretical / volume
     theoretical_norm[0:1550] = np.zeros(1550)
     return theoretical_norm
+
 
 def make_input_matrix(file_path, reagents, reagent_folder):
     nmr_datax, nmr_datay = get_nmr(file_path)
@@ -43,10 +47,8 @@ def make_input_matrix(file_path, reagents, reagent_folder):
             theo_list.append(theo_list[0])
         theoretical = np.array(theo_list)
 
-    nmr_datay = signal.resample_poly(
-        nmr_datay, 1000, 18040)
-    theoretical = signal.resample_poly(
-        theoretical, 1000, 18040)
+    nmr_datay = signal.resample_poly(nmr_datay, 1000, 18040)
+    theoretical = signal.resample_poly(theoretical, 1000, 18040)
 
     # normalize to 1.0
     avg_max = max(max(theoretical), max(nmr_datay))
@@ -56,8 +58,7 @@ def make_input_matrix(file_path, reagents, reagent_folder):
     # Reshape amd concatenate
     nmr_datay = nmr_datay.reshape(1, -1)
     theoretical = theoretical.reshape(1, -1)
-    concatented = np.concatenate(
-        (theoretical, nmr_datay), axis=0)
+    concatented = np.concatenate((theoretical, nmr_datay), axis=0)
     concatenated = concatented.reshape(2, len(theoretical[0]))
     data_x = np.array([concatenated])
 
@@ -93,4 +94,3 @@ class DataManager:
 
         self.curr_idx = (self.curr_idx + batch_size) % self.size
         return batch_x, batch_y
-

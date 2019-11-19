@@ -1,8 +1,6 @@
 import tensorflow as tf
-import math
-import numpy as np
-from utils import *
-from matplotlib import pyplot as plt
+
+from .utils import *
 
 
 def new_weights(shape, name=None):
@@ -80,7 +78,10 @@ class NMR_nn:
         experimental and theoretical spectrum."""
 
     def __init__(
-        self, model_path="models/fullset", spectrum_shape=271, noise_level=0.5
+        self,
+        model_path=path.join(path.dirname(__file__), "models", "fullset"),
+        spectrum_shape=271,
+        noise_level=0.5,
     ):
         self.noise_level = noise_level
         self.spectrum_shape = spectrum_shape
@@ -148,7 +149,6 @@ class NMR_nn:
         y_pred = tf.nn.softmax(logits)
 
         return logits, y_pred
-
 
     def predict(self, datax):
         # Reset tensorflow graph
