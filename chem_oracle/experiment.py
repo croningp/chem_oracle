@@ -1,75 +1,75 @@
+import glob
 import logging
+import os
 import random
+import threading
+import time
 from datetime import datetime
 from os import path
 from shutil import copyfile
-from typing import List, Union, Dict
+from typing import List
 
 import numpy as np
 import pandas as pd
 from rdkit.Chem import MolFromSmiles
 
+from chem_oracle import chemstation
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
 from ms_analyze.ms import MassSpectra
 from nmr_analyze.nn_model import full_nmr_process
 
 
-def parse_nmr_filename(filename: str) -> Dict:
-    """
-    Parse the full path of an NMR data file (typically `data.1d`).
-    
-    Args:
-        filename (str): Full path of NMR data file. The parent folder
-        is assumed to follow the format below:
-        f"{reaction_number}_{reagent1}-{reagent2}-{reagent3}_{reactor_number}_{nucleus}"
-        Numbers may be zero-padded.
-    """
-    folder, basename = path.split(filename)
-    foldername = path.basename(folder)
-    reaction_number, reagent_list, reactor_number, nucleus = foldername.split("_")
-    reagents = [int(reagent) for reagent in reagent_list.split("-")]
-    logging.debug(f"Parsing NMR folder {foldername}; found reagents {reagents}.")
-    return {
-        "reaction_number": int(reaction_number),
-        "reagents": reagents,
-        "reactor_number": int(reactor_number),
-        "nucleus": nucleus,
-    }
+def reaction_number(experiment_dir: str) -> int:
+    experiment_dir = path.basename(experiment_dir)
+    return int(experiment_dir.split("_")[0])
 
 
-def parse_ms_filename(filename: str) -> List[str]:
-    """
-    Parse the full path of an MS data file (typically `*.npz`).
-    
-    Args:
-        filename (str): Full path of MS data file. The parent folder
-        is assumed to follow the format below:
-        f"{reaction_number}_{reagent1}-{reagent2}-{reagent3}_{reactor_number}"
-        Numbers may be zero-padded.
-    """
-    basename = path.basename(filename)
-    experiment_name, _ = path.splitext(basename)
-    reaction_number, reagent_list, reactor_number = experiment_name.split("_")
-    reagents = [int(reagent) for reagent in reagent_list.split("-")]
-    logging.debug(f"Parsing MS folder {foldername}; found reagents {reagents}.")
-    return {
-        "reaction_number": int(reaction_number),
-        "reagents": reagents,
-        "reactor_number": int(reactor_number),
-    }
+def reaction_components(experiment_dir: str) -> List[int]:
+    experiment_dir = path.basename(experiment_dir)
+    components = experiment_dir.split("_")[1]
+    return [int(s) for s in components.split("-")]
 
 
-def ms_is_reactive(filename, starting_materials, max_error: float = 0.2):
+def nmr_is_reactive(experiment_dir: str, starting_material_dirs: List[str]) -> bool:
+    data_dir = path.dirname(experiment_dir)
+    return full_nmr_process(experiment_dir, starting_material_dirs, data_dir) > 0.5
+
+
+def read_hplc(experiment_dir: str, channel: str = "A"):
+    filename = path.join(experiment_dir, f"DAD1{channel}")
+    npz_file = filename + ".npz"
+    if path.exists(npz_file):
+        # already processed
+        data = np.load(npz_file)
+        return data["times"], data["values"]
+    else:
+        print(f"Not found {npz_file}")
+        ch_file = filename + ".ch"
+        data = chemstation.CHFile(ch_file)
+        np.savez_compressed(npz_file, times=data.times, values=data.values)
+        return np.array(data.times), np.array(data.values)
+
+
+def hplc_is_reactive(experiment_dir: str, starting_materials_dirs: List[str]) -> bool:
+    product_spectrum = read_hplc(experiment_dir)
+    starting_material_spectra = [read_hplc(sm) for sm in starting_materials_dirs]
+
+    return None
+
+
+def ms_is_reactive(
+    spectrum_dir: str,
+    starting_materials,
+    max_error: float = 0.2,
+    ms_file_suffix: str = "_is1",
+):
+    ms_file = glob.glob(path.join(spectrum_dir, f"*{ms_file_suffix}.npz"))[0]
+    ms = MassSpectra.from_npz(ms_file)
     components = ms.find_components_adaptive(
         max_error=max_error, min_components=len(starting_materials)
     )
-    return len(components) > len(starting_materials)
-
-
-def nmr_is_reactive(filename, starting_materials):
-    data_dir = path.dirname(path.dirname(filename))
-    return full_nmr_process(filename, starting_materials, data_dir) > 0.5
+    return len(components[1]) > len(starting_materials)
 
 
 class ExperimentManager:
@@ -96,12 +96,17 @@ class ExperimentManager:
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props
+        self.data_dir = path.dirname(self.xlsx_file)
+        self.reagents_dir = path.join(self.data_dir, "reagents")
+        self.update_lock = threading.Lock()
+        self.should_update = False
 
         # seed RNG for reproducibility
         random.seed(seed)
 
         # set up logging
         self.logger = logging.getLogger("experiment-manager")
+        self.logger.setLevel(logging.DEBUG)
 
         self.read_experiments()
 
@@ -117,6 +122,9 @@ class ExperimentManager:
             self.model = StructuralModel(self.fingerprints, N_props)
         else:
             self.model = NonstructuralModel(self.n_compounds, N_props)
+
+        # start update loop
+        threading.Thread(target=self.update_loop, daemon=True).start()
 
     def read_experiments(self):
         with pd.ExcelFile(self.xlsx_file) as reader:
@@ -146,11 +154,7 @@ class ExperimentManager:
                     "HPLC reactivity": float,
                     "avg_expected_reactivity": float,
                     "std_expected_reactivity": float,
-                    "setup_time": str,
-                    "reactor_number": float,
-                    "data_folder": str,
                 },
-                parse_dates=["setup_time"],
             )
 
     def write_experiments(self, backup=True):
@@ -162,6 +166,14 @@ class ExperimentManager:
         with pd.ExcelWriter(self.xlsx_file) as writer:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
+
+    def update_loop(self, backup=True, **params):
+        while True:
+            if self.should_update:
+                self.update(**params)
+                self.write_experiments(backup)
+                self.should_update = False
+            time.sleep(30)
 
     def update(self, n_samples=250, variational=False, **pymc3_params):
         """Update expected reactivities using probabilistic model.
@@ -178,64 +190,95 @@ class ExperimentManager:
         tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
         tri_std = np.std(trace["tri_doesnt_react"], axis=0)
 
-        df = self.reactions_df
-        # update dataframe with calculated reactivities
-        df.loc[
-            df["compound3"] == -1,
-            ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack([bin_avg, bin_std]).T
-        df.loc[
-            df["compound3"] != -1,
-            ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack([tri_avg, tri_std]).T
+        with self.update_lock:
+            df = self.reactions_df
+            # update dataframe with calculated reactivities
+            df.loc[
+                df["compound3"] == -1,
+                ["avg_expected_reactivity", "std_expected_reactivity"],
+            ] = np.stack([bin_avg, bin_std]).T
+            df.loc[
+                df["compound3"] != -1,
+                ["avg_expected_reactivity", "std_expected_reactivity"],
+            ] = np.stack([tri_avg, tri_std]).T
 
-    def get_spectrum(self, reagent_number: int):
-        if reagent_number == -1:
-            return None
+    def nmr_folder(self, reagent_number: int) -> str:
+        for p in os.listdir(self.reagents_dir):
+            if "_1H" not in p:
+                continue
+            if reaction_components(p) == [reagent_number]:
+                return path.join(self.reagents_dir, p)
+        raise Exception(f"NMR spectrum for reagent {reagent_number} not found.")
 
-    @property
-    def nmr_callback(self):
-        def callback(filename):
-            self.logger.info(f"New NMR data found at {filename}")
-            file_info = parse_nmr_filename(filename)
-            components = file_info["reagents"]
-            if len(components) > 1:  # reaction mixture — evaluate reactivity
-                reactivity = nmr_is_reactive(filename, components)
-                rdf = self.reactions_df
-                selector = (
-                    (rdf["compound1"] == components[0])
-                    & (rdf["compound2"] == components[1])
-                    & (rdf["compound3"] == components[2])
-                )
-                rdf.loc[selector, "reaction_number"] = file_info["reaction_number"]
-                rdf.loc[selector, "reactor_number"] = file_info["reactor_number"]
-                rdf.loc[selector, "NMR_reactivity"] = reactivity
-                self.update()
-                self.write_experiments()
+    def hplc_folder(self, reagent_number: int) -> str:
+        for p in os.listdir(self.reagents_dir):
+            if "_HPLC" not in p or "BLANK" in p:
+                continue
+            if reaction_components(p) == [reagent_number]:
+                return path.join(self.reagents_dir, p)
+        raise Exception(f"HPLC for {reagent_number} not found.")
 
-        return callback
+    def hplc_callback(self, data_dir: str):
+        self.logger.info(f"HPLC path {data_dir} - detected.")
+        with self.update_lock:
+            self.add_hplc(data_dir)
+        self.should_update = True
 
-    @property
-    def ms_callback(self):
-        def callback(filename):
-            self.logger.info(f"New MS data found at {filename}")
-            file_info = parse_ms_filename(filename)
-            components = file_info["reagents"]
-            if len(components) > 1:  # reaction mixture — evaluate reactivity
-                reactivity = ms_is_reactive(filename, components)
-                rdf = self.reactions_df
-                selector = (
-                    (rdf["compound1"] == components[0])
-                    & (rdf["compound2"] == components[1])
-                    & (rdf["compound3"] == components[2])
-                )
-                rdf.loc[selector, "reaction_number"] = file_info["reaction_number"]
-                rdf.loc[selector, "reactor_number"] = file_info["reactor_number"]
-                rdf.loc[selector, "MS_reactivity"] = reactivity
-                self.update()
-                self.write_experiments()
+    def ms_callback(self, data_dir: str):
+        self.logger.info(f"MS path {data_dir} - detected.")
+        with self.update_lock:
+            self.add_ms(data_dir)
+        self.should_update = True
 
-        return callback
+    def nmr_callback(self, data_dir: str):
+        self.logger.info(f"Proton NMR path {data_dir} - detected.")
+        with self.update_lock:
+            self.add_nmr(data_dir)
+        self.should_update = True
+
+    def find_reaction(self, components):
+        rdf = self.reactions_df
+        return (
+            (rdf["compound1"] == components[0])
+            & (rdf["compound2"] == components[1])
+            & (rdf["compound3"] == (components[2] if len(components) == 3 else -1))
+        )
+
+    def add_nmr(self, data_dir: str):
+        components = reaction_components(data_dir)
+        if len(components) > 1:  # reaction mixture — evaluate reactivity
+            self.logger.info(f"Adding NMR spectrum for reaction {components}.")
+            component_paths = [self.nmr_folder(component) for component in components]
+            reactivity = nmr_is_reactive(data_dir, component_paths)
+            rdf = self.reactions_df
+            selector = self.find_reaction(components)
+            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
+            rdf.loc[selector, "NMR_reactivity"] = reactivity
+
+    def add_ms(self, data_dir: str):
+        if "BLANK" in data_dir:
+            return
+        components = reaction_components(data_dir)
+        if len(components) > 1:  # reaction mixture — evaluate reactivity
+            self.logger.info(f"Adding MS spectrum for reaction {components}.")
+            reactivity = ms_is_reactive(data_dir, components, max_error=0.15)
+            rdf = self.reactions_df
+            selector = self.find_reaction(components)
+            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
+            rdf.loc[selector, "MS_reactivity"] = reactivity
+
+    def add_hplc(self, data_dir: str):
+        if "BLANK" in data_dir:
+            return
+        components = reaction_components(data_dir)
+        if len(components) > 1:  # reaction mixture — evaluate reactivity
+            self.logger.info(f"Adding HPLC spectrum for reaction {components}.")
+            component_paths = map(self.hplc_folder, components)
+            reactivity = hplc_is_reactive(data_dir, component_paths)
+            rdf = self.reactions_df
+            selector = self.find_reaction(components)
+            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
+            rdf.loc[selector, "HPLC_reactivity"] = reactivity
 
     def populate(self):
         """
@@ -266,8 +309,9 @@ class ExperimentManager:
                             None,  # HPLC_reactivity
                             None,  # avg_expected_reactivity
                             None,  # std_expected_reactivity
-                            None,  # setup_time
-                            None,  # reactor_number
-                            None,  # data_folder
                         )
                         idx += 1
+        # convert compound numbers back to int (pandas bug)
+        self.reactions_df = df.astype(
+            {"compound1": "int", "compound2": "int", "compound3": "int"}
+        )

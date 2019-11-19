@@ -34,6 +34,30 @@ def indices(N: int, ndims: int) -> np.ndarray:
     return np.array(v, dtype="int")
 
 
+def symmteric_rank2(i, j):
+    I, J = np.maximum(i, j), np.minimum(i, j)
+    return I * (I + 1) / 2 + J
+
+
+def symmetric_rank2_indices(N: int):
+    return np.fromfunction(symmteric_rank2, (N, N)).astype("int")
+
+
+def symmetric_rank3(*args):
+    I, J, K = sorted(args)
+    return I * (I + 1) * (I + 2) / 6 + J * (J + 1) / 2 + K
+
+
+def symmetric_rank3_indices(N: int):
+    return np.array(
+        [
+            [[symmetric_rank3(i, j, k) for k in range(N)] for j in range(N)]
+            for i in range(N)
+        ],
+        dtype="int",
+    )
+
+
 def triangular_tensor(v, N, ndims, indices):
     """
     v: vector of unique reactivities
@@ -77,39 +101,6 @@ def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
             tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
                 :, :, :, np.newaxis
             ],
-            M3[:, np.newaxis, :],
-        )
-        * react_tensor[np.newaxis, :, :, :],
-        axis=[1, 2, 3],
-    )
-    return tri_doesnt_react_binary * tri_doesnt_react_ternary
-
-
-def tri_doesnt_react_np(M1, M2, M3, react_matrix, react_tensor):
-    tri_doesnt_react_binary = (
-        np.prod(
-            1
-            - np.dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
-        )
-        * np.prod(
-            1
-            - np.dot(M1[:, :, np.newaxis], M3[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
-        )
-        * np.prod(
-            1
-            - np.dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
-        )
-    )
-    tri_doesnt_react_ternary = np.prod(
-        1
-        - np.dot(
-            np.dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[:, :, :, np.newaxis],
             M3[:, np.newaxis, :],
         )
         * react_tensor[np.newaxis, :, :, :],

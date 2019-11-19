@@ -39,6 +39,7 @@ class NonstructuralModel(Model):
             tt._shared(tri_facts["compound2"].values),
             tt._shared(tri_facts["compound3"].values),
         )
+
         with pm.Model() as m:
             mem = pm.Uniform(
                 "mem", lower=0.0, upper=1.0, shape=(self.ncompounds, self.N)
@@ -134,6 +135,7 @@ class StructuralModel(Model):
             tt._shared(tri_facts["compound2"].values),
             tt._shared(tri_facts["compound3"].values),
         )
+
         with pm.Model() as m:
             mem = pm.Beta(
                 "mem", alpha=1.0, beta=3.0, shape=(self.fingerprint_length, self.N)
