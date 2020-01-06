@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from rdkit.Chem import MolFromSmiles
 
-from chem_oracle import chemstation
+from hplc_analyze import chemstation
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
 from ms_analyze.ms import MassSpectra
