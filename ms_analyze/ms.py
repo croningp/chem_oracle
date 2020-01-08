@@ -1,9 +1,9 @@
 import logging
-import numpy as np
 
-from sklearn.decomposition import NMF
-from scipy.signal import find_peaks
+import numpy as np
 from matplotlib import pyplot as plt
+from scipy.signal import find_peaks
+from sklearn.decomposition import NMF
 
 
 class MassSpectra:
@@ -82,6 +82,10 @@ class MassSpectra:
     @property
     def time_resolution(self):
         return self.retention_times[1] - self.retention_times[0]
+
+    @property
+    def mass_resolution(self):
+        return self.masses[1] - self.masses[0]
 
     def get_slice(self, t_start: float, t_end: float):
         """
@@ -194,9 +198,9 @@ class MassSpectrum:
         self.intensities = intensities
 
     def plot(self, normalized=False):
-        intesities = self.intensities
+        intensities = self.intensities
         if normalized:
-            plt.plot(self.masses, intensities / self.intensities.max())
+            plt.plot(self.masses, intensities / intensities.max())
         else:
             plt.plot(self.masses, self.intensities)
 
@@ -209,3 +213,7 @@ class MassSpectrum:
 
     def __getitem__(self, idx):
         return self.intensities[idx]
+
+    @property
+    def mass_resolution(self):
+        return self.masses[1] - self.masses[0]
