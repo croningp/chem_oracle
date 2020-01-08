@@ -84,7 +84,7 @@ class NonstructuralModel(Model):
                 "reacts_binary_nmr",
                 mu=1 - bin_doesnt_react,
                 sd=0.1,
-                observed=bin_facts["NMR_reactivity"],
+                observed=bin_facts["HPLC_reactivity"],
             )
             ms_obs_binary = pm.Normal(
                 "reacts_binary_ms",
@@ -96,7 +96,7 @@ class NonstructuralModel(Model):
                 "reacts_ternary_nmr",
                 mu=1 - tri_no_react,
                 sd=0.1,
-                observed=tri_facts["NMR_reactivity"],
+                observed=tri_facts["HPLC_reactivity"],
             )
             ms_obs_ternary = pm.Normal(
                 "reacts_ternary_ms",

@@ -16,7 +16,8 @@ from rdkit.Chem import MolFromSmiles
 from hplc_analyze import chemstation
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
-from ms_analyze.ms import MassSpectra
+from hplc_analyze.hplc_reactivity import hplc_process
+from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import full_nmr_process
 
 
@@ -273,8 +274,7 @@ class ExperimentManager:
         components = reaction_components(data_dir)
         if len(components) > 1:  # reaction mixture — evaluate reactivity
             self.logger.info(f"Adding HPLC spectrum for reaction {components}.")
-            component_paths = map(self.hplc_folder, components)
-            reactivity = hplc_is_reactive(data_dir, component_paths)
+            reactivity = hplc_process(data_dir)
             rdf = self.reactions_df
             selector = self.find_reaction(components)
             rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)

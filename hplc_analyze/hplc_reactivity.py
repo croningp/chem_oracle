@@ -3,6 +3,8 @@ import os
 import numpy as np
 from scipy.signal import find_peaks
 
+from hplc_analyze import chemstation
+
 PEAK_HEIGHT = 200
 PEAK_PROXIMITY = 100  # entire chromatogram is around 4000 points
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/reagents/"
@@ -20,9 +22,19 @@ def get_reagent_file(n):
             return i
 
 
-def load_hplc(path):
-    file = np.load(os.path.join(path, "DAD1A.npz"))
-    return file["times"], file["values"]
+def load_hplc(experiment_dir: str, channel: str = "A"):
+    filename = os.path.join(experiment_dir, f"DAD1{channel}")
+    npz_file = filename + ".npz"
+    if os.path.exists(npz_file):
+        # already processed
+        data = np.load(npz_file)
+        return data["times"], data["values"]
+    else:
+        print(f"Not found {npz_file}")
+        ch_file = filename + ".ch"
+        data = chemstation.CHFile(ch_file)
+        np.savez_compressed(npz_file, times=data.times, values=data.values)
+        return np.array(data.times), np.array(data.values)
 
 
 def forge_blank_name(filename):
@@ -63,9 +75,9 @@ def hplc_process(filename):
             new_peaks.append(p)
     print("new_peaks " + str(new_peaks))
     if new_peaks == []:
-        return 0
+        return False
     else:
-        return 1
+        return True
 
 
 if __name__ == "__main__":
