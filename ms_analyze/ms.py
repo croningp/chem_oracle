@@ -184,7 +184,7 @@ class MassSpectra:
             error,
         )
 
-    def find_components_adaptive(self, max_error, min_components=3, max_components=15):
+    def find_components_adaptive(self, max_error, min_components=1, max_components=8):
         for n in range(min_components, max_components + 1):
             components, spectra, error = self.find_components(n)
             if error < max_error:

@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 from rdkit.Chem import MolFromSmiles
 
-from hplc_analyze import chemstation
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
 from hplc_analyze.hplc_reactivity import hplc_process
@@ -37,40 +36,55 @@ def nmr_is_reactive(experiment_dir: str, starting_material_dirs: List[str]) -> b
     return full_nmr_process(experiment_dir, starting_material_dirs, data_dir) > 0.5
 
 
-def read_hplc(experiment_dir: str, channel: str = "A"):
-    filename = path.join(experiment_dir, f"DAD1{channel}")
-    npz_file = filename + ".npz"
-    if path.exists(npz_file):
-        # already processed
-        data = np.load(npz_file)
-        return data["times"], data["values"]
-    else:
-        print(f"Not found {npz_file}")
-        ch_file = filename + ".ch"
-        data = chemstation.CHFile(ch_file)
-        np.savez_compressed(npz_file, times=data.times, values=data.values)
-        return np.array(data.times), np.array(data.values)
-
-
-def hplc_is_reactive(experiment_dir: str, starting_materials_dirs: List[str]) -> bool:
-    product_spectrum = read_hplc(experiment_dir)
-    starting_material_spectra = [read_hplc(sm) for sm in starting_materials_dirs]
-
-    return None
+def match(ms: MassSpectrum, ms_ref: MassSpectrum, mass_tol=1.0):
+    """
+    Tries to match every peak in `ms` with one in `ms_ref` at most
+    `mass_tol` apart.
+    :param ms: Sample mass spectrum
+    :param ms_ref: Reference mass spectrum, assuming the same mass axis as sample spectrum
+    :param mass_tol: Maximum distance between two peaks (in
+    :return: `True` if all peaks in `ms` can be matched, `False` otherwise.
+    """
+    peaks = ms.find_peaks(height=0.1)
+    peaks_ref = ms_ref.find_peaks(height=0.025)
+    diff = np.abs(peaks - peaks_ref[:, np.newaxis]) < np.round(
+        mass_tol / ms.mass_resolution
+    )
+    return diff.any(axis=0).all()
 
 
 def ms_is_reactive(
     spectrum_dir: str,
-    starting_materials,
-    max_error: float = 0.2,
+    starting_material_dirs: str,
+    max_error: float = 0.1,
+    mass_resolution: float = 1.0,
     ms_file_suffix: str = "_is1",
 ):
-    ms_file = glob.glob(path.join(spectrum_dir, f"*{ms_file_suffix}.npz"))[0]
-    ms = MassSpectra.from_npz(ms_file)
-    components = ms.find_components_adaptive(
-        max_error=max_error, min_components=len(starting_materials)
-    )
-    return len(components[1]) > len(starting_materials)
+    rxn_file = glob.glob(path.join(spectrum_dir, f"*{ms_file_suffix}.npz"))[0]
+    reactant_files = [
+        glob.glob(path.join(d, f"*{ms_file_suffix}.npz"))[0]
+        for d in starting_material_dirs
+    ]
+    rxn_ms = MassSpectra.from_npz(rxn_file).discretize(mass_resolution)
+    reactant_ms = [
+        MassSpectra.from_npz(ms_file).discretize(mass_resolution)
+        for ms_file in reactant_files
+    ]
+    # sum up all reactant chromatograms
+    for r_ms in reactant_ms[1:]:
+        reactant_ms[0].spectra += r_ms.spectra
+
+    rxn_components = rxn_ms.find_components_adaptive(max_error)[1]
+    reactant_components = reactant_ms[0].find_components_adaptive(max_error)[1]
+
+    for component in rxn_components:
+        new = True
+        for component_ref in reactant_components:
+            if match(component, component_ref):
+                new = False
+        if new:
+            return True
+    return False
 
 
 class ExperimentManager:
@@ -184,10 +198,10 @@ class ExperimentManager:
         """
         self.model.condition(self.reactions_df, n_samples, variational, **pymc3_params)
         trace = self.model.trace
-        # caculate reactivity for binary reactions
+        # calculate reactivity for binary reactions
         bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
         bin_std = np.std(trace["bin_doesnt_react"], axis=0)
-        # caculate reactivity for three component reactions
+        # calculate reactivity for three component reactions
         tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
         tri_std = np.std(trace["tri_doesnt_react"], axis=0)
 
@@ -203,21 +217,27 @@ class ExperimentManager:
                 ["avg_expected_reactivity", "std_expected_reactivity"],
             ] = np.stack([tri_avg, tri_std]).T
 
-    def nmr_folder(self, reagent_number: int) -> str:
+    def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:
+        """
+        Gives the full path to the data folder for a given reagent number and
+        data type.
+        :param reagent_number: TODO
+        :param data_type: "HPLC", "MS", or "NMR"
+        :param blank: Return the corresponding blank experiment.
+        :return: Full path to reagent data of requested type.
+        """
+        suffixes = {"HPLC": "_HPLC", "MS": "_MS", "NMR": "_1H"}
+        suffix = suffixes[data_type]
         for p in os.listdir(self.reagents_dir):
-            if "_1H" not in p:
+            if suffix not in p:
+                continue
+            if blank and "BLANK" not in p:
+                continue
+            if not blank and "BLANK" in p:
                 continue
             if reaction_components(p) == [reagent_number]:
                 return path.join(self.reagents_dir, p)
-        raise Exception(f"NMR spectrum for reagent {reagent_number} not found.")
-
-    def hplc_folder(self, reagent_number: int) -> str:
-        for p in os.listdir(self.reagents_dir):
-            if "_HPLC" not in p or "BLANK" in p:
-                continue
-            if reaction_components(p) == [reagent_number]:
-                return path.join(self.reagents_dir, p)
-        raise Exception(f"HPLC for {reagent_number} not found.")
+        raise Exception(f"{data_type} folder for reagent {reagent_number} not found.")
 
     def hplc_callback(self, data_dir: str):
         self.logger.info(f"HPLC path {data_dir} - detected.")
@@ -249,7 +269,9 @@ class ExperimentManager:
         components = reaction_components(data_dir)
         if len(components) > 1:  # reaction mixture — evaluate reactivity
             self.logger.info(f"Adding NMR spectrum for reaction {components}.")
-            component_paths = [self.nmr_folder(component) for component in components]
+            component_paths = [
+                self.data_folder(component, data_type="NMR") for component in components
+            ]
             reactivity = nmr_is_reactive(data_dir, component_paths)
             rdf = self.reactions_df
             selector = self.find_reaction(components)
@@ -260,9 +282,13 @@ class ExperimentManager:
         if "BLANK" in data_dir:
             return
         components = reaction_components(data_dir)
+        component_dirs = [
+            self.data_folder(component, data_type="MS") for component in components
+        ]
         if len(components) > 1:  # reaction mixture — evaluate reactivity
             self.logger.info(f"Adding MS spectrum for reaction {components}.")
-            reactivity = ms_is_reactive(data_dir, components, max_error=0.15)
+            reactivity = ms_is_reactive(data_dir, component_dirs)
+            print(f"reactivity: {reactivity}")
             rdf = self.reactions_df
             selector = self.find_reaction(components)
             rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
