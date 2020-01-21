@@ -1,5 +1,7 @@
 import math
 from itertools import combinations, permutations
+from os import path
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -192,3 +194,14 @@ def posterior_reactivity_plot(fact_number, posterior_trace, facts):
     plt.yticks([])
     plt.xlabel("Reaction probability")
     return f, 1 - posterior_trace[var_name][:, location]
+
+
+def reaction_number(experiment_dir: str) -> int:
+    experiment_dir = path.basename(experiment_dir)
+    return int(experiment_dir.split("_")[0])
+
+
+def reaction_components(experiment_dir: str) -> List[int]:
+    experiment_dir = path.basename(experiment_dir)
+    components = experiment_dir.split("_")[1]
+    return [int(s) for s in components.split("-")]

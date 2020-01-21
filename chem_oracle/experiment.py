@@ -20,17 +20,6 @@ from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import full_nmr_process
 
 
-def reaction_number(experiment_dir: str) -> int:
-    experiment_dir = path.basename(experiment_dir)
-    return int(experiment_dir.split("_")[0])
-
-
-def reaction_components(experiment_dir: str) -> List[int]:
-    experiment_dir = path.basename(experiment_dir)
-    components = experiment_dir.split("_")[1]
-    return [int(s) for s in components.split("-")]
-
-
 def nmr_is_reactive(experiment_dir: str, starting_material_dirs: List[str]) -> bool:
     data_dir = path.dirname(experiment_dir)
     return full_nmr_process(experiment_dir, starting_material_dirs, data_dir) > 0.5
@@ -235,7 +224,7 @@ class ExperimentManager:
                 continue
             if not blank and "BLANK" in p:
                 continue
-            if reaction_components(p) == [reagent_number]:
+            if util.reaction_components(p) == [reagent_number]:
                 return path.join(self.reagents_dir, p)
         raise Exception(f"{data_type} folder for reagent {reagent_number} not found.")
 
