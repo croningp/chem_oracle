@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from os import path
 from shutil import copyfile
-from typing import List
+from typing import List, Iterable
 
 import numpy as np
 import pandas as pd
@@ -26,52 +26,92 @@ def nmr_is_reactive(experiment_dir: str, starting_material_dirs: List[str]) -> b
     return full_nmr_process(experiment_dir, starting_material_dirs, data_dir) > 0.5
 
 
-def match(ms: MassSpectrum, ms_ref: MassSpectrum, mass_tol=1.0):
+def match(
+    ms: MassSpectrum,
+    refs_ms: Iterable[MassSpectrum],
+    blanks_ms: Iterable[MassSpectrum],
+    mass_tol=1.2,
+):
     """
-    Tries to match every peak in `ms` with one in `ms_ref` at most
+    Tries to match every peak in `ms` with one in `ms_refs` at most
     `mass_tol` apart.
     :param ms: Sample mass spectrum
-    :param ms_ref: Reference mass spectrum, assuming the same mass axis as sample spectrum
+    :param refs_ms: Reference mass spectrum, assuming the same mass axis as sample spectrum
     :param mass_tol: Maximum distance between two peaks (in
     :return: `True` if all peaks in `ms` can be matched, `False` otherwise.
     """
+    logger = logging.getLogger("experiment-manager")
     peaks = ms.find_peaks(height=0.1)
-    peaks_ref = ms_ref.find_peaks(height=0.025)
-    diff = np.abs(peaks - peaks_ref[:, np.newaxis]) < np.round(
-        mass_tol / ms.mass_resolution
-    )
+    logger.debug(f"Product peaks: {peaks}")
+
+    # find starting material peaks
+    ref_peaks = []
+    for ref_ms in refs_ms:
+        ref_peaks.extend(ref_ms.find_peaks(height=0.025))
+    ref_peaks = np.array(ref_peaks)
+    logger.debug(f"SM peaks: {ref_peaks}")
+
+    # find blank peaks
+    blank_peaks = []
+    for blank_ms in blanks_ms:
+        blank_peaks.extend(blank_ms.find_peaks(height=0.025))
+    blank_peaks = np.array(blank_peaks)
+    logger.debug(f"Blank peaks: {blank_peaks}")
+
+    # remove blank peaks from reaction mixture peaks
+    real_peaks = peaks[
+        (
+            np.abs(peaks - blank_peaks[:, np.newaxis]) > mass_tol / ms.mass_resolution
+        ).all(axis=0)
+    ]
+    logger.debug(f"Real peaks: {real_peaks}")
+
+    # find whether at least one reaction peak is absent from starting materials
+    diff = np.abs(real_peaks - ref_peaks[:, np.newaxis]) < mass_tol / ms.mass_resolution
     return diff.any(axis=0).all()
 
 
 def ms_is_reactive(
     spectrum_dir: str,
-    starting_material_dirs: str,
-    max_error: float = 0.1,
+    starting_material_dirs: List[str],
+    min_contribution: float = 0.1,
     mass_resolution: float = 1.0,
     ms_file_suffix: str = "_is1",
 ):
+    logger = logging.getLogger("experiment-manager")
     rxn_file = glob.glob(path.join(spectrum_dir, f"*{ms_file_suffix}.npz"))[0]
     reactant_files = [
         glob.glob(path.join(d, f"*{ms_file_suffix}.npz"))[0]
         for d in starting_material_dirs
     ]
+    try:
+        blank_file = glob.glob(
+            path.join(f"{spectrum_dir[:-3]}_BLANK_MS", f"*{ms_file_suffix}.npz")
+        )[0]
+    except Exception as e:
+        raise e
+    else:
+        blank_ms = MassSpectra.from_npz(blank_file).discretize(mass_resolution)
+        blank_components = blank_ms.find_components_adaptive(min_contribution)[1]
+
     rxn_ms = MassSpectra.from_npz(rxn_file).discretize(mass_resolution)
     reactant_ms = [
         MassSpectra.from_npz(ms_file).discretize(mass_resolution)
         for ms_file in reactant_files
     ]
-    # sum up all reactant chromatograms
-    for r_ms in reactant_ms[1:]:
-        reactant_ms[0].spectra += r_ms.spectra
 
-    rxn_components = rxn_ms.find_components_adaptive(max_error)[1]
-    reactant_components = reactant_ms[0].find_components_adaptive(max_error)[1]
-
+    rxn_components = rxn_ms.find_components_adaptive(min_contribution)[1]
+    logger.debug(f"{len(rxn_components)} rxn components")
+    reactant_components = [
+        r.find_components_adaptive(min_contribution)[1] for r in reactant_ms
+    ]
     for component in rxn_components:
         new = True
-        for component_ref in reactant_components:
-            if match(component, component_ref):
+        for ref_components in reactant_components:
+            if match(component, ref_components, blank_components):
                 new = False
+                logger.debug("MATCHED!")
+                break
         if new:
             return True
     return False
@@ -196,8 +236,8 @@ class ExperimentManager:
         """
         Gives the full path to the data folder for a given reagent number and
         data type.
-        :param reagent_number: TODO
-        :param data_type: "HPLC", "MS", or "NMR"
+        :param reagent_number: The reagent to look up.
+        :param data_type: "HPLC", "MS", or "NMR".
         :param blank: Return the corresponding blank experiment.
         :return: Full path to reagent data of requested type.
         """
@@ -237,11 +277,16 @@ class ExperimentManager:
 
     def find_reaction(self, components):
         rdf = self.reactions_df
-        return (
-            (rdf["compound1"] == components[0])
-            & (rdf["compound2"] == components[1])
-            & (rdf["compound3"] == (components[2] if len(components) == 3 else -1))
+        c = sorted(components)
+        selector = (
+            (rdf["compound1"] == c[0])
+            & (rdf["compound2"] == c[1])
+            & (rdf["compound3"] == (c[2] if len(c) == 3 else -1))
         )
+        if selector.any():
+            return selector
+        else:
+            raise ValueError(f"Reaction {c} not found in dataframe.")
 
     def add_data(self, data_dir: str, data_type: str, override: bool = False, **params):
         if "BLANK" in data_dir:
@@ -287,38 +332,38 @@ class ExperimentManager:
             rdf.loc[selector, reactivity_column] = reactivity
 
 
-    def populate(self):
-        """
+def populate(self):
+    """
         Add entries for missing reactions to reaction dataframe.
         Existing entries are left intact.
         """
-        all_compounds = self.reagents_df["reagent_number"]
-        n_compounds = len(all_compounds)
-        df = self.reactions_df
-        idx = len(df)
-        for i1, c1 in enumerate(all_compounds):
-            for i2, c2 in enumerate(all_compounds):
-                if i2 <= i1:
-                    continue
-                for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
-                    # check whether entry already exists
-                    if df.query(
-                        "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
-                    ).empty:
-                        # add missing entry and increment index
-                        self.reactions_df.loc[idx] = (
-                            None,  # reactor_number
-                            c1,  # compound1
-                            c2,  # compound2
-                            c3,  # compound3
-                            None,  # NMR_reactivity
-                            None,  # MS_reactivity
-                            None,  # HPLC_reactivity
-                            None,  # avg_expected_reactivity
-                            None,  # std_expected_reactivity
-                        )
-                        idx += 1
-        # convert compound numbers back to int (pandas bug)
-        self.reactions_df = df.astype(
-            {"compound1": "int", "compound2": "int", "compound3": "int"}
-        )
+    all_compounds = self.reagents_df["reagent_number"]
+    n_compounds = len(all_compounds)
+    df = self.reactions_df
+    idx = len(df)
+    for i1, c1 in enumerate(all_compounds):
+        for i2, c2 in enumerate(all_compounds):
+            if i2 <= i1:
+                continue
+            for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
+                # check whether entry already exists
+                if df.query(
+                    "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
+                ).empty:
+                    # add missing entry and increment index
+                    self.reactions_df.loc[idx] = (
+                        None,  # reactor_number
+                        c1,  # compound1
+                        c2,  # compound2
+                        c3,  # compound3
+                        None,  # NMR_reactivity
+                        None,  # MS_reactivity
+                        None,  # HPLC_reactivity
+                        None,  # avg_expected_reactivity
+                        None,  # std_expected_reactivity
+                    )
+                    idx += 1
+    # convert compound numbers back to int (pandas bug)
+    self.reactions_df = df.astype(
+        {"compound1": "int", "compound2": "int", "compound3": "int"}
+    )

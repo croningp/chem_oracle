@@ -172,24 +172,27 @@ class MassSpectra:
         """
         model = NMF(num_components)
         transformed = model.fit_transform(self.spectra.T)
-        reconstruction = model.inverse_transform(transformed).T.sum(axis=1)
-        ref = self.chromatogram()[1]
-        error = np.abs(reconstruction - ref).sum() / ref.sum()
+        # normalized ion contribution of each component
+        contributions = model.components_.sum(axis=1) * transformed.sum(axis=0)
+        contributions /= contributions.sum()
         return (
             model.components_.T,
             [
                 MassSpectrum(self.masses, transformed[:, i])
                 for i in range(num_components)
             ],
-            error,
+            contributions,
         )
 
-    def find_components_adaptive(self, max_error, min_components=1, max_components=8):
+    def find_components_adaptive(
+        self, min_contribution: float, min_components=1, max_components=8
+    ):
         for n in range(min_components, max_components + 1):
-            components, spectra, error = self.find_components(n)
-            if error < max_error:
-                return components, spectra, error
-        raise Exception(f"Could not reach error < {max_error}.")
+            components, spectra, contributions = self.find_components(n)
+            # stop if any contributions are below threshold
+            if (contributions < min_contribution).any():
+                return components, spectra, contributions
+        raise Exception(f"Could not reach error < {min_contribution}.")
 
 
 class MassSpectrum:
