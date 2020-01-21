@@ -158,6 +158,8 @@ class ExperimentManager:
                     "HPLC reactivity": float,
                     "avg_expected_reactivity": float,
                     "std_expected_reactivity": float,
+                    "reactivity_disruption": float,
+                    "uncertainty_disruption": float,
                 },
             )
 
@@ -185,26 +187,9 @@ class ExperimentManager:
         Args:
             n_samples (int): Number of samples in each MCMC chain.
         """
-        self.model.condition(self.reactions_df, n_samples, variational, **pymc3_params)
-        trace = self.model.trace
-        # calculate reactivity for binary reactions
-        bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
-        bin_std = np.std(trace["bin_doesnt_react"], axis=0)
-        # calculate reactivity for three component reactions
-        tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
-        tri_std = np.std(trace["tri_doesnt_react"], axis=0)
-
         with self.update_lock:
-            df = self.reactions_df
-            # update dataframe with calculated reactivities
-            df.loc[
-                df["compound3"] == -1,
-                ["avg_expected_reactivity", "std_expected_reactivity"],
-            ] = np.stack([bin_avg, bin_std]).T
-            df.loc[
-                df["compound3"] != -1,
-                ["avg_expected_reactivity", "std_expected_reactivity"],
-            ] = np.stack([tri_avg, tri_std]).T
+            self.model.sample(self.reactions_df, n_samples, variational, **pymc3_params)
+            self.reactions_df = self.model.condition(self.reactions_df)
 
     def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:
         """

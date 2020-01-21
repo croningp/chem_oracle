@@ -1,8 +1,59 @@
 import numpy as np
 import pymc3 as pm
+import pandas as pd
 import theano.tensor as tt
 
 from .util import triangular_tensor, tri_doesnt_react, indices
+
+
+def beta_params(mu, sd):
+    """
+    Beta distribution parameters to match a given mean and SD.
+    :param mu:
+    :param sd:
+    :return:
+    """
+    M = 1 / (1 - mu)
+    b = (M - 1) / M ** 3 / sd ** 2 - 1 / M
+    a = (M - 1) * b
+    return a, b
+
+
+def reactivity_disruption(observations, probabilities):
+    pi = np.mean(probabilities, axis=1)
+    n_exp = observations.shape[0]
+    res = np.zeros((n_exp, n_exp))
+    for i in range(n_exp):
+        obs_pos = probabilities[:, observations[i, :] == 1]
+        obs_neg = probabilities[:, observations[i, :] == 0]
+        mu_ji = np.mean(obs_pos, axis=1)
+        mu_ji_bar = np.mean(obs_neg, axis=1)
+        for j in range(n_exp):
+            res[i, j] = pi[i] * np.abs(mu_ji[j] - pi[j]) + (1 - pi[i]) * np.abs(
+                mu_ji_bar[j] - pi[j]
+            )
+
+    np.fill_diagonal(res, 0.0)
+    return res
+
+
+def uncertainty_disruption(observations, probabilities):
+    pi = np.mean(probabilities, axis=1)
+    stdj = np.std(probabilities, axis=1)
+    n_exp = observations.shape[0]
+    res = np.zeros((n_exp, n_exp))
+    for i in range(n_exp):
+        obs_pos = probabilities[:, observations[i, :] == 1]
+        obs_neg = probabilities[:, observations[i, :] == 0]
+        stdji = np.std(obs_pos, axis=1)
+        stdji_bar = np.std(obs_neg, axis=1)
+        for j in range(n_exp):
+            res[i, j] = pi[i] * np.abs(stdji[j] - stdj[j]) + (1 - pi[i]) * np.abs(
+                stdji_bar[j] - stdj[j]
+            )
+
+    np.fill_diagonal(res, 0.0)
+    return res
 
 
 class Model:
@@ -11,7 +62,9 @@ class Model:
         self.bin_indices = indices(N, 2)
         self.tri_indices = indices(N, 3)
 
-    def condition(self, facts, n_samples, variational, **pymc3_params):
+    def sample(
+        self, facts: pd.DataFrame, n_samples, variational, **pymc3_params
+    ) -> pm.sampling.MultiTrace:
         m = self._pymc3_model(facts)
         with m:
             if variational:
@@ -19,6 +72,60 @@ class Model:
                 self.trace = self.approx.sample(n_samples)
             else:
                 self.trace = pm.sample(n_samples, **pymc3_params)
+
+    def condition(self, facts: pd.DataFrame, method_name: str = "MS") -> pd.DataFrame:
+        # calculate reactivity for binary reactions
+        bin_avg = 1 - np.mean(self.trace["bin_doesnt_react"], axis=0)
+        bin_std = np.std(self.trace["bin_doesnt_react"], axis=0)
+        # calculate reactivity for three component reactions
+        tri_avg = 1 - np.mean(self.trace["tri_doesnt_react"], axis=0)
+        tri_std = np.std(self.trace["tri_doesnt_react"], axis=0)
+        # binary reactions
+        bins = facts[(facts["compound3"] == -1)]
+        tris = facts[(facts["compound3"] != -1)]
+
+        new_facts = facts.copy()
+        # update dataframe with calculated reactivities
+        new_facts.loc[
+            new_facts["compound3"] == -1,
+            ["avg_expected_reactivity", "std_expected_reactivity"],
+        ] = np.stack([bin_avg, bin_std]).T
+        new_facts.loc[
+            new_facts["compound3"] != -1,
+            ["avg_expected_reactivity", "std_expected_reactivity"],
+        ] = np.stack([tri_avg, tri_std]).T
+        observations = np.hstack(
+            (
+                self.trace[f"reacts_binary_{method_name}_missing"],
+                self.trace[f"reacts_ternary_{method_name}_missing"],
+            )
+        ).T
+        probabilities = np.hstack(
+            (
+                1
+                - self.trace["bin_doesnt_react"][
+                    :, pd.isna(bins[f"{method_name}_reactivity"])
+                ],
+                1
+                - self.trace["tri_doesnt_react"][
+                    :, pd.isna(tris[f"{method_name}_reactivity"])
+                ],
+            )
+        ).T
+        r = reactivity_disruption(observations, probabilities).sum(axis=0)
+        u = uncertainty_disruption(observations, probabilities).sum(axis=0)
+        bin_missings = (new_facts["compound3"] == -1) & pd.isna(
+            new_facts[f"{method_name}_reactivity"]
+        )
+        tri_missings = (new_facts["compound3"] != -1) & pd.isna(
+            new_facts[f"{method_name}_reactivity"]
+        )
+        n_bin = bin_missings.sum()
+        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[:n_bin]
+        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[:n_bin]
+        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[n_bin:]
+        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[n_bin:]
+        return new_facts
 
 
 class NonstructuralModel(Model):
