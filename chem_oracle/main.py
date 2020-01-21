@@ -10,7 +10,6 @@ from chem_oracle.monitoring import DataEventHandler
 
 
 def main(xlsx_file: str, N_props=4, structural_model=True):
-    global manager
     xlsx_file = path.abspath(xlsx_file)
     data_dir = path.dirname(xlsx_file)
     manager = ExperimentManager(xlsx_file, N_props, structural_model)
@@ -23,26 +22,27 @@ def main(xlsx_file: str, N_props=4, structural_model=True):
     logging.getLogger("experiment-manager").addHandler(handler)
 
     # set up file system monitors
-    nmr_handler = DataEventHandler(manager.add_nmr, patterns=["*_1H"])
-    ms_handler = DataEventHandler(manager.add_ms, patterns=["*_MS"])
-    hplc_hander = DataEventHandler(manager.add_hplc, patterns=["*_HPLC"])
+    nmr_handler = DataEventHandler(manager.nmr_callback, patterns=["*_1H"])
+    ms_handler = DataEventHandler(manager.ms_callback, patterns=["*_MS"])
+    hplc_hander = DataEventHandler(manager.hplc_callback, patterns=["*_HPLC"])
     observer = Observer()
-    observer.schedule(nmr_handler, data_dir, recursive=True)
-    observer.schedule(ms_handler, data_dir, recursive=True)
-    observer.schedule(hplc_hander, data_dir, recursive=True)
+    observer.schedule(nmr_handler, path=data_dir, recursive=False)
+    observer.schedule(ms_handler, path=data_dir, recursive=False)
+    observer.schedule(hplc_hander, path=data_dir, recursive=False)
     observer.start()
 
     # scan data dir for existing data
     for folder in os.listdir(data_dir):
         full_path = path.join(data_dir, folder)
         if folder.endswith("_1H"):
-            manager.add_nmr(full_path)
+            manager.add_data(full_path, data_type="NMR")
         elif folder.endswith("_MS"):
-            manager.add_ms(full_path)
+            manager.add_data(full_path, data_type="MS")
         elif folder.endswith("_HPLC"):
-            manager.add_hplc(full_path)
+            manager.add_data(full_path, data_type="HPLC")
+
+    return manager
 
 
 if __name__ == "__main__":
-    manager = None
-    main(sys.argv[1])
+    manager = main(sys.argv[1])

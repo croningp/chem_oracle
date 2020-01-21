@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from rdkit.Chem import MolFromSmiles
 
+from chem_oracle import util
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
 from hplc_analyze.hplc_reactivity import hplc_process
@@ -215,20 +216,23 @@ class ExperimentManager:
 
     def hplc_callback(self, data_dir: str):
         self.logger.info(f"HPLC path {data_dir} - detected.")
+        time.sleep(1.0)
         with self.update_lock:
-            self.add_hplc(data_dir)
+            self.add_data(data_dir, data_type="HPLC")
         self.should_update = True
 
     def ms_callback(self, data_dir: str):
         self.logger.info(f"MS path {data_dir} - detected.")
+        time.sleep(1.0)
         with self.update_lock:
-            self.add_ms(data_dir)
+            self.add_data(data_dir, data_type="MS")
         self.should_update = True
 
     def nmr_callback(self, data_dir: str):
         self.logger.info(f"Proton NMR path {data_dir} - detected.")
+        time.sleep(1.0)
         with self.update_lock:
-            self.add_nmr(data_dir)
+            self.add_data(data_dir, data_type="NMR")
         self.should_update = True
 
     def find_reaction(self, components):
@@ -239,46 +243,49 @@ class ExperimentManager:
             & (rdf["compound3"] == (components[2] if len(components) == 3 else -1))
         )
 
-    def add_nmr(self, data_dir: str):
-        components = reaction_components(data_dir)
-        if len(components) > 1:  # reaction mixture — evaluate reactivity
-            self.logger.info(f"Adding NMR spectrum for reaction {components}.")
-            component_paths = [
-                self.data_folder(component, data_type="NMR") for component in components
-            ]
-            reactivity = nmr_is_reactive(data_dir, component_paths)
-            rdf = self.reactions_df
-            selector = self.find_reaction(components)
-            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
-            rdf.loc[selector, "NMR_reactivity"] = reactivity
-
-    def add_ms(self, data_dir: str):
+    def add_data(self, data_dir: str, data_type: str, override: bool = False, **params):
         if "BLANK" in data_dir:
             return
-        components = reaction_components(data_dir)
-        component_dirs = [
-            self.data_folder(component, data_type="MS") for component in components
-        ]
-        if len(components) > 1:  # reaction mixture — evaluate reactivity
-            self.logger.info(f"Adding MS spectrum for reaction {components}.")
-            reactivity = ms_is_reactive(data_dir, component_dirs)
-            print(f"reactivity: {reactivity}")
-            rdf = self.reactions_df
-            selector = self.find_reaction(components)
-            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
-            rdf.loc[selector, "MS_reactivity"] = reactivity
+        reaction_number = util.reaction_number(data_dir)
+        components = util.reaction_components(data_dir)
+        reactivity_column = f"{data_type}_reactivity"
 
-    def add_hplc(self, data_dir: str):
-        if "BLANK" in data_dir:
+        # skip if reactivity data already exists
+        if (
+            not override
+            and (
+                self.reactions_df[reactivity_column].notna()
+                & self.find_reaction(components)
+                & (self.reactions_df["reaction_number"] == reaction_number)
+            ).any()
+        ):
+            self.logger.info(
+                f"{data_type} data for reaction {reaction_number} between "
+                f"{components} already processed - skipping."
+            )
             return
-        components = reaction_components(data_dir)
+
         if len(components) > 1:  # reaction mixture — evaluate reactivity
-            self.logger.info(f"Adding HPLC spectrum for reaction {components}.")
-            reactivity = hplc_process(data_dir)
+            self.logger.info(
+                f"Adding {data_type} data for reaction {reaction_number}: {components}."
+            )
+            if data_type == "MS":
+                component_dirs = [
+                    self.data_folder(component, data_type="MS")
+                    for component in components
+                ]
+                reactivity = ms_is_reactive(data_dir, component_dirs, **params)
+            elif data_type == "HPLC":
+                reactivity = hplc_process(data_dir)
+            elif data_type == "NMR":
+                # TODO: Assess reactivity
+                return
+            self.logger.info(f"{data_type} reactivity: {reactivity}")
             rdf = self.reactions_df
             selector = self.find_reaction(components)
-            rdf.loc[selector, "reaction_number"] = reaction_number(data_dir)
-            rdf.loc[selector, "HPLC_reactivity"] = reactivity
+            rdf.loc[selector, "reaction_number"] = reaction_number
+            rdf.loc[selector, reactivity_column] = reactivity
+
 
     def populate(self):
         """
