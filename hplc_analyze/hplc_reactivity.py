@@ -1,4 +1,5 @@
 import os
+import logging
 
 import numpy as np
 from scipy.signal import find_peaks
@@ -23,6 +24,7 @@ def get_reagent_file(n):
 
 
 def load_hplc(experiment_dir: str, channel: str = "A"):
+    logger = logging.getLogger("experiment-manager")
     filename = os.path.join(experiment_dir, f"DAD1{channel}")
     npz_file = filename + ".npz"
     if os.path.exists(npz_file):
@@ -30,7 +32,7 @@ def load_hplc(experiment_dir: str, channel: str = "A"):
         data = np.load(npz_file)
         return data["times"], data["values"]
     else:
-        print(f"Not found {npz_file}")
+        logger.debug(f"Not found {npz_file}")
         ch_file = filename + ".ch"
         data = chemstation.CHFile(ch_file)
         np.savez_compressed(npz_file, times=data.times, values=data.values)
@@ -49,6 +51,7 @@ def hplc_process(filename):
     :param filename: full path of the hplc folder (ex:'Z:\\group\\Hessam Mehr\\Data\\Discovery\\data\\0_17-7_HPLC'
     :return: 0 if no new peaks are observed, 1 if new peaks are found
     """
+    logger = logging.getLogger("experiment-manager")
     reagents_n = filename.split("_")[1].split("-")
     old_peaks = []
     for r in reagents_n:
@@ -64,8 +67,8 @@ def hplc_process(filename):
     peaks, _ = find_peaks(val, height=PEAK_HEIGHT, distance=20)
 
     new_peaks = []
-    print("peaks " + str(peaks))
-    print("old_peaks " + str(old_peaks))
+    logger.info(f"peaks {peaks}")
+    logger.info(f"old_peaks {old_peaks}")
     for p in peaks:
         for o in old_peaks:
             if o - PEAK_PROXIMITY < p < o + PEAK_PROXIMITY:
@@ -73,8 +76,8 @@ def hplc_process(filename):
                 break
         else:
             new_peaks.append(p)
-    print("new_peaks " + str(new_peaks))
-    if new_peaks == []:
+    logger.info(f"old_peaks {new_peaks}")
+    if new_peaks:
         return False
     else:
         return True
