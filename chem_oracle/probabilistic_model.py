@@ -163,13 +163,11 @@ class NonstructuralModel(Model):
                 upper=1.0,
                 shape=self.N * (self.N - 1) * (self.N - 2) // 6,
             )
-            react_tensor = pm.Deterministic(
-                "react_tensor",
-                triangular_tensor(tri_reactivities, self.N, 3, self.tri_indices),
+            react_tensor = triangular_tensor(
+                tri_reactivities, self.N, 3, self.tri_indices
             )
-            react_matrix = pm.Deterministic(
-                "react_matrix",
-                triangular_tensor(bin_reactivities, self.N, 2, self.bin_indices),
+            react_matrix = triangular_tensor(
+                bin_reactivities, self.N, 2, self.bin_indices
             )
             # memberships of binary reactions
             m1, m2 = mem[bin_r1, :][:, :, np.newaxis], mem[bin_r2, :][:, np.newaxis, :]
@@ -260,14 +258,14 @@ class StructuralModel(Model):
                 upper=1.0,
                 shape=self.N * (self.N - 1) * (self.N - 2) // 6,
             )
-            react_tensor = pm.Deterministic(
-                "react_tensor",
-                triangular_tensor(tri_reactivities, self.N, 3, self.tri_indices),
+
+            react_tensor = triangular_tensor(
+                tri_reactivities, self.N, 3, self.tri_indices
             )
-            react_matrix = pm.Deterministic(
-                "react_matrix",
-                triangular_tensor(bin_reactivities, self.N, 2, self.bin_indices),
+            react_matrix = triangular_tensor(
+                bin_reactivities, self.N, 2, self.bin_indices
             )
+
             # memberships of binary reactions
             fp1, fp2 = self.fingerprints[bin_r1, :], self.fingerprints[bin_r2, :]
             m1, m2 = (
