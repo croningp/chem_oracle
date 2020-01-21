@@ -35,14 +35,14 @@ class MassSpectra:
         self.scale = scale or spectra.max()
 
     @classmethod
-    def from_advion(cls, data):
+    def from_advion(cls, data) -> "MassSpectra":
         retention_times = data.retention_times() / 60.0
         masses = data.masses()
         spectra = data.spectra()
         return cls(retention_times, masses, spectra)
 
     @classmethod
-    def from_npz(cls, filename: str):
+    def from_npz(cls, filename: str) -> "MassSpectra":
         """
         Create a MassSpectra instance from a numpy npz file.
         """
