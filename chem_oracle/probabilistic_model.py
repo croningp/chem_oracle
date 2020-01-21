@@ -184,29 +184,25 @@ class NonstructuralModel(Model):
                 "tri_doesnt_react",
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
-
-            nmr_obs_binary = pm.Normal(
-                "reacts_binary_nmr",
-                mu=1 - bin_doesnt_react,
-                sd=0.1,
+            # observations
+            hplc_obs_binary = pm.Bernoulli(
+                "reacts_binary_HPLC",
+                p=1 - bin_doesnt_react,
                 observed=bin_facts["HPLC_reactivity"],
             )
-            ms_obs_binary = pm.Normal(
-                "reacts_binary_ms",
-                mu=1 - bin_doesnt_react,
-                sd=0.1,
+            ms_obs_binary = pm.Bernoulli(
+                "reacts_binary_MS",
+                p=1 - bin_doesnt_react,
                 observed=bin_facts["MS_reactivity"],
             )
-            nmr_obs_ternary = pm.Normal(
-                "reacts_ternary_nmr",
-                mu=1 - tri_no_react,
-                sd=0.1,
+            hplc_obs_ternary = pm.Bernoulli(
+                "reacts_ternary_HPLC",
+                p=1 - tri_no_react,
                 observed=tri_facts["HPLC_reactivity"],
             )
-            ms_obs_ternary = pm.Normal(
-                "reacts_ternary_ms",
-                mu=1 - tri_no_react,
-                sd=0.1,
+            ms_obs_ternary = pm.Bernoulli(
+                "reacts_ternary_MS",
+                p=1 - tri_no_react,
                 observed=tri_facts["MS_reactivity"],
             )
         return m
@@ -295,26 +291,27 @@ class StructuralModel(Model):
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
 
+            # TODO: Revert to Bernoulli?
             nmr_obs_binary = pm.Normal(
-                "reacts_binary_nmr",
+                "reacts_binary_HPLC",
                 mu=1 - bin_doesnt_react,
                 sd=0.05,
-                observed=bin_facts["NMR_reactivity"],
+                observed=bin_facts["HPLC_reactivity"],
             )
             ms_obs_binary = pm.Normal(
-                "reacts_binary_ms",
+                "reacts_binary_MS",
                 mu=1 - bin_doesnt_react,
                 sd=0.05,
                 observed=bin_facts["MS_reactivity"],
             )
             nmr_obs_ternary = pm.Normal(
-                "reacts_ternary_nmr",
+                "reacts_ternary_HPLC",
                 mu=1 - tri_no_react,
                 sd=0.05,
-                observed=tri_facts["NMR_reactivity"],
+                observed=tri_facts["HPLC_reactivity"],
             )
             ms_obs_ternary = pm.Normal(
-                "reacts_ternary_ms",
+                "reacts_ternary_MS",
                 mu=1 - tri_no_react,
                 sd=0.05,
                 observed=tri_facts["MS_reactivity"],
