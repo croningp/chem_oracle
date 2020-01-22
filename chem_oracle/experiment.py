@@ -126,6 +126,7 @@ class ExperimentManager:
         fingerprint_radius=1,
         fingerprint_bits=256,
         seed=None,
+        log_level=logging.WARN
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -151,7 +152,7 @@ class ExperimentManager:
 
         # set up logging
         self.logger = logging.getLogger("experiment-manager")
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(log_level)
 
         self.read_experiments()
 

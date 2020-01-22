@@ -9,10 +9,10 @@ from chem_oracle.experiment import ExperimentManager
 from chem_oracle.monitoring import DataEventHandler
 
 
-def main(xlsx_file: str, N_props=4, structural_model=True):
+def main(xlsx_file: str, **manager_params):
     xlsx_file = path.abspath(xlsx_file)
     data_dir = path.dirname(xlsx_file)
-    manager = ExperimentManager(xlsx_file, N_props, structural_model)
+    manager = ExperimentManager(xlsx_file, **manager_params)
     # set up logging
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
