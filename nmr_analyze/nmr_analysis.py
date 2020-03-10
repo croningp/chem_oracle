@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import glob
 import logging
 import struct
-from os.path import join
+from functools import reduce
+from operator import add
+from os import path
+from os.path import join, basename
 from typing import Union, Tuple
 
 import matplotlib.pyplot as plt
@@ -77,15 +81,15 @@ class NMRSpectrum:
         s.spectrum *= np.exp(1j * np.pi * ph)
         return s
 
-    def show(self, imaginary=False, axes=None):
+    def show(self, imaginary=False, axes=None, **plt_params):
         if not axes:
             fig, axes = plt.subplots()
         else:
             fig = axes.get_figure()
         if imaginary:
-            axes.plot(self.xscale, self.spectrum.imag)
+            axes.plot(self.xscale, self.spectrum.imag, **plt_params)
         else:
-            axes.plot(self.xscale, self.spectrum.real)
+            axes.plot(self.xscale, self.spectrum.real, **plt_params)
         axes.set_xlim(self.xscale.max(), self.xscale.min())
         return fig
 
@@ -106,9 +110,16 @@ class NMRSpectrum:
             start=lowest_frequency_ppm, stop=highest_frequency_ppm, num=len(self),
         )
 
-    def cut(self, low_ppm: float, high_ppm: float, inplace=False):
+    def crop(self, low_ppm: float, high_ppm: float, inplace=False):
         s = self if inplace else self.copy()
         selector = (s.xscale > low_ppm) & (s.xscale < high_ppm)
+        s.xscale = s.xscale[selector]
+        s.spectrum = s.spectrum[selector]
+        return s
+
+    def cut(self, low_ppm: float, high_ppm: float, inplace=False):
+        s = self if inplace else self.copy()
+        selector = (s.xscale < low_ppm) | (s.xscale > high_ppm)
         s.xscale = s.xscale[selector]
         s.spectrum = s.spectrum[selector]
         return s
@@ -133,6 +144,7 @@ class NMRSpectrum:
         self,
         peak_ppm: float,
         window_ppm: float = 0.1,
+        cut: bool = True,
         inplace=False,
         **find_peaks_params,
     ):
@@ -147,9 +159,13 @@ class NMRSpectrum:
         peaks, data = self.find_peaks(window=window, **params)
 
         peak_idx = int(peaks[0])
-        peak_width = int(data["widths"][0])
+        peak_width = int(data["widths"][0]) * 2
         lo, hi = (peak_idx - peak_width), (peak_idx + peak_width)
-        s[lo:hi] = 0.0
+        if cut:
+            s.cut(s.xscale[lo], s.xscale[hi], inplace=True)
+        else:
+            vals = np.linspace(s[lo], s[hi], hi - lo)
+            s[lo:hi] = vals
         return s
 
     def find_peaks(self, window: Tuple[float, float] = None, **find_peaks_params):
