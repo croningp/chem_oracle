@@ -149,7 +149,12 @@ class Model:
         self.tri_indices = indices(N, 3)
 
     def sample(
-        self, facts: pd.DataFrame, n_samples: int, variational: bool, **pymc3_params
+        self,
+        facts: pd.DataFrame,
+        n_samples: int,
+        chains: int,
+        variational: bool,
+        **pymc3_params,
     ) -> pm.sampling.MultiTrace:
         m = self._pymc3_model(facts)
         with m:
@@ -157,14 +162,16 @@ class Model:
                 self.approx = pm.fit(**pymc3_params)
                 self.trace = self.approx.sample(n_samples)
             else:
-                self.trace = pm.sample(n_samples, **pymc3_params)
+                self.trace = pm.sample(
+                    n_samples, chains=chains, cores=chains, **pymc3_params
+                )
 
     def condition(
         self,
         facts: pd.DataFrame,
         method_name: str = "MS",
         differential: bool = True,
-        **disruption_params
+        **disruption_params,
     ) -> pd.DataFrame:
         # calculate reactivity for binary reactions
         bin_avg = 1 - np.mean(self.trace["bin_doesnt_react"], axis=0)

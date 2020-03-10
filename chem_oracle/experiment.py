@@ -217,14 +217,16 @@ class ExperimentManager:
                 self.should_update = False
             time.sleep(30)
 
-    def update(self, n_samples=250, variational=False, **pymc3_params):
+    def update(self, n_samples=250, chains=16, variational=False, **pymc3_params):
         """Update expected reactivities using probabilistic model.
         
         Args:
             n_samples (int): Number of samples in each MCMC chain.
         """
         with self.update_lock:
-            self.model.sample(self.reactions_df, n_samples, variational, **pymc3_params)
+            self.model.sample(
+                self.reactions_df, n_samples, chains, variational, **pymc3_params
+            )
             self.reactions_df = self.model.condition(self.reactions_df)
 
     def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:
