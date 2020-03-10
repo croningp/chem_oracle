@@ -18,12 +18,7 @@ from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
 from hplc_analyze.hplc_reactivity import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
-from nmr_analyze.nn_model import full_nmr_process
-
-
-def nmr_is_reactive(experiment_dir: str, starting_material_dirs: List[str]) -> bool:
-    data_dir = path.dirname(experiment_dir)
-    return full_nmr_process(experiment_dir, starting_material_dirs, data_dir) > 0.5
+from nmr_analyze.nn_model import nmr_process
 
 
 def match(
@@ -324,8 +319,7 @@ class ExperimentManager:
             elif data_type == "HPLC":
                 reactivity = hplc_process(data_dir)
             elif data_type == "NMR":
-                # TODO: Assess reactivity
-                return
+                reactivity = nmr_process(data_dir)
             self.logger.info(f"{data_type} reactivity: {reactivity}")
             rdf = self.reactions_df
             selector = self.find_reaction(components)

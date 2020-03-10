@@ -269,6 +269,11 @@ class NonstructuralModel(Model):
                 p=1 - bin_doesnt_react,
                 observed=bin_facts["MS_reactivity"],
             )
+            nmr_obs_binary = pm.Bernoulli(
+                "reacts_binary_NMR",
+                p=1 - bin_doesnt_react,
+                observed=bin_facts["NMR_reactivity"],
+            )
             hplc_obs_ternary = pm.Bernoulli(
                 "reacts_ternary_HPLC",
                 p=1 - tri_no_react,
@@ -278,6 +283,11 @@ class NonstructuralModel(Model):
                 "reacts_ternary_MS",
                 p=1 - tri_no_react,
                 observed=tri_facts["MS_reactivity"],
+            )
+            nmr_obs_ternary = pm.Bernoulli(
+                "reacts_ternary_NMR",
+                p=1 - tri_no_react,
+                observed=tri_facts["NMR_reactivity"],
             )
         return m
 
@@ -366,7 +376,7 @@ class StructuralModel(Model):
             )
 
             # TODO: Revert to Bernoulli?
-            nmr_obs_binary = pm.Normal(
+            hplc_obs_binary = pm.Normal(
                 "reacts_binary_HPLC",
                 mu=1 - bin_doesnt_react,
                 sd=0.05,
@@ -378,7 +388,13 @@ class StructuralModel(Model):
                 sd=0.05,
                 observed=bin_facts["MS_reactivity"],
             )
-            nmr_obs_ternary = pm.Normal(
+            nmr_obs_binary = pm.Normal(
+                "reacts_binary_NMR",
+                mu=1 - bin_doesnt_react,
+                sd=0.05,
+                observed=bin_facts["NMR_reactivity"],
+            )
+            hplc_obs_ternary = pm.Normal(
                 "reacts_ternary_HPLC",
                 mu=1 - tri_no_react,
                 sd=0.05,
@@ -389,5 +405,11 @@ class StructuralModel(Model):
                 mu=1 - tri_no_react,
                 sd=0.05,
                 observed=tri_facts["MS_reactivity"],
+            )
+            nmr_obs_ternary = pm.Normal(
+                "reacts_ternary_NMR",
+                mu=1 - tri_no_react,
+                sd=0.05,
+                observed=tri_facts["NMR_reactivity"],
             )
         return m
