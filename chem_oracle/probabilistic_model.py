@@ -21,20 +21,13 @@ def beta_params(mu, sd):
     return a, b
 
 
-def reactivity_disruption(observations, probabilities, empirical=False):
-    if empirical:
-        pi = np.mean(observations, axis=1)
-    else:
-        pi = np.mean(probabilities, axis=1)
+def reactivity_disruption(observations, probabilities):
+    pi = np.mean(probabilities, axis=1)
     n_exp = observations.shape[0]
     res = np.zeros((n_exp, n_exp))
     for i in range(n_exp):
-        if empirical:
-            obs_pos = observations[:, observations[i, :] == 1]
-            obs_neg = observations[:, observations[i, :] == 0]
-        else:
-            obs_pos = probabilities[:, observations[i, :] == 1]
-            obs_neg = probabilities[:, observations[i, :] == 0]
+        obs_pos = probabilities[:, observations[i, :] == 1]
+        obs_neg = probabilities[:, observations[i, :] == 0]
         mu_ji = np.mean(obs_pos, axis=1)
         mu_ji_bar = np.mean(obs_neg, axis=1)
         for j in range(n_exp):
@@ -46,22 +39,14 @@ def reactivity_disruption(observations, probabilities, empirical=False):
     return res
 
 
-def uncertainty_disruption(observations, probabilities, empirical=False):
-    if empirical:
-        pi = np.mean(observations, axis=1)
-        stdj = np.std(observations, axis=1)
-    else:
-        pi = np.mean(probabilities, axis=1)
-        stdj = np.std(probabilities, axis=1)
+def uncertainty_disruption(observations, probabilities):
+    pi = np.mean(probabilities, axis=1)
+    stdj = np.std(probabilities, axis=1)
     n_exp = observations.shape[0]
     res = np.zeros((n_exp, n_exp))
     for i in range(n_exp):
-        if empirical:
-            obs_pos = observations[:, observations[i, :] == 1]
-            obs_neg = observations[:, observations[i, :] == 0]
-        else:
-            obs_pos = probabilities[:, observations[i, :] == 1]
-            obs_neg = probabilities[:, observations[i, :] == 0]
+        obs_pos = probabilities[:, observations[i, :] == 1]
+        obs_neg = probabilities[:, observations[i, :] == 0]
         stdji = np.std(obs_pos, axis=1)
         stdji_bar = np.std(obs_neg, axis=1)
         for j in range(n_exp):
@@ -92,11 +77,14 @@ def disruptions(facts, trace, method_name: str):
         )
     ).T
     return (
-        reactivity_disruption(observations, probabilities).sum(axis=0),
-        uncertainty_disruption(observations, probabilities).sum(axis=0),
+        reactivity_disruption(observations, probabilities).sum(axis=1),
+        uncertainty_disruption(observations, probabilities).sum(axis=1),
     )
 
-def differential_disruptions(facts, trace, method_name: str, n: int, sort_by_reactivity: bool):
+
+def differential_disruptions(
+    facts, trace, method_name: str, n: int = 5, sort_by_reactivity: bool = False
+):
     # create a copy of dataframe and remove existing disruption values
     f = facts.copy()
     f["reactivity_disruption"] = np.nan
@@ -105,12 +93,8 @@ def differential_disruptions(facts, trace, method_name: str, n: int, sort_by_rea
     t = {v: trace[v] for v in trace.varnames}
     for i in range(n):
         rr, uu = disruptions(f, t, method_name)
-        bin_missings = (f["compound3"] == -1) & pd.isna(
-            f[f"{method_name}_reactivity"]
-        )
-        tri_missings = (f["compound3"] != -1) & pd.isna(
-            f[f"{method_name}_reactivity"]
-        )
+        bin_missings = (f["compound3"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
+        tri_missings = (f["compound3"] != -1) & pd.isna(f[f"{method_name}_reactivity"])
         n_bin = bin_missings.sum()
         if sort_by_reactivity:
             top_rxn = np.argmax(rr)
@@ -138,8 +122,7 @@ def differential_disruptions(facts, trace, method_name: str, n: int, sort_by_rea
         # remove experiment from MCMC trace
         t[var_name] = np.delete(t[var_name], top_rxn, axis=1)
 
-    return (f["reactivity_disruption"],
-            f["uncertainty_disruption"])
+    return (f["reactivity_disruption"], f["uncertainty_disruption"])
 
 
 class Model:
@@ -181,6 +164,8 @@ class Model:
         tri_std = np.std(self.trace["tri_doesnt_react"], axis=0)
 
         new_facts = facts.copy()
+        # remove old disruption values
+        new_facts.loc[:, ["reactivity_disruption", "uncertainty_disruption"]] = np.nan
         # update dataframe with calculated reactivities
         new_facts.loc[
             new_facts["compound3"] == -1,
@@ -199,7 +184,9 @@ class Model:
         )
         n_bin = bin_missings.sum()
         if differential:
-            r, u = differential_disruptions(new_facts, self.trace, method_name, **disruption_params)
+            r, u = differential_disruptions(
+                new_facts, self.trace, method_name, **disruption_params
+            )
         else:
             r, u = disruptions(new_facts, self.trace, method_name)
         new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[:n_bin]
