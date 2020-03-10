@@ -11,7 +11,6 @@ from typing import List, Iterable
 
 import numpy as np
 import pandas as pd
-from rdkit.Chem import MolFromSmiles
 
 from chem_oracle import util
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
@@ -155,7 +154,7 @@ class ExperimentManager:
 
         if structural_model:
             # calculate fingerprints
-            self.mols = [MolFromSmiles(smiles) for smiles in self.reagents_df["SMILES"]]
+            self.mols = list(self.reagents_df["SMILES"])
             # TODO: expose this as a parameter
             self.fingerprints = morgan_matrix(
                 self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
