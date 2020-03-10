@@ -254,22 +254,19 @@ class ExperimentManager:
     def hplc_callback(self, data_dir: str):
         self.logger.info(f"HPLC path {data_dir} - detected.")
         time.sleep(1.0)
-        with self.update_lock:
-            self.add_data(data_dir, data_type="HPLC")
+        self.add_data(data_dir, data_type="HPLC")
         self.should_update = True
 
     def ms_callback(self, data_dir: str):
         self.logger.info(f"MS path {data_dir} - detected.")
         time.sleep(1.0)
-        with self.update_lock:
-            self.add_data(data_dir, data_type="MS")
+        self.add_data(data_dir, data_type="MS")
         self.should_update = True
 
     def nmr_callback(self, data_dir: str):
         self.logger.info(f"Proton NMR path {data_dir} - detected.")
         time.sleep(1.0)
-        with self.update_lock:
-            self.add_data(data_dir, data_type="NMR")
+        self.add_data(data_dir, data_type="NMR")
         self.should_update = True
 
     def find_reaction(self, components):
@@ -307,7 +304,14 @@ class ExperimentManager:
             )
             return
 
-        if len(components) > 1:  # reaction mixture — evaluate reactivity
+        if len(components) == 1:  # single reagent — ignore
+            self.logger.info(f"Only one component detected - not processing.")
+            return
+
+        if self.update_lock.locked():
+            self.logger.info("Waiting for update lock.")
+        with self.update_lock:
+            self.logger.info("Update lock acquired.")
             self.logger.info(
                 f"Adding {data_type} data for reaction {reaction_number}: {components}."
             )
@@ -326,6 +330,7 @@ class ExperimentManager:
             selector = self.find_reaction(components)
             rdf.loc[selector, "reaction_number"] = reaction_number
             rdf.loc[selector, reactivity_column] = reactivity
+            self.logger.info("Update lock released.")
 
 
 def populate(self):
