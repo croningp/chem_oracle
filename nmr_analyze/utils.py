@@ -11,10 +11,10 @@ spec_lenght = 4878
 
 
 def get_nmr(file_path):
-    spectrum = na.nmr_spectrum(file_path)
+    spectrum = na.NMRSpectrum(file_path)
     na.default_processing(spectrum, solvent="DMSO")
     y = spectrum.spectrum
-    x = spectrum.X_scale
+    x = spectrum.xscale
     return x, y
 
 
