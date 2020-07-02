@@ -200,12 +200,14 @@ class MassSpectrum:
         self.masses = masses
         self.intensities = intensities
 
-    def plot(self, normalized=False):
+    def plot(self, normalized=False, axes=None):
+        axes = axes or plt.subplots()[1]
         intensities = self.intensities
         if normalized:
-            plt.plot(self.masses, intensities / intensities.max())
+            axes.plot(self.masses, intensities / intensities.max())
         else:
-            plt.plot(self.masses, self.intensities)
+            axes.plot(self.masses, self.intensities)
+        axes.set_xlabel("m/z")
 
     def find_peaks(self, **options):
         return find_peaks(self.intensities / self.intensities.max(), **options)[0]
