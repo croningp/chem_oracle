@@ -120,7 +120,7 @@ class ExperimentManager:
         fingerprint_radius=1,
         fingerprint_bits=256,
         seed=None,
-        log_level=logging.WARN
+        log_level=logging.WARN,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
