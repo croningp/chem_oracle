@@ -1,23 +1,21 @@
-from ms_analyze.ms import MassSpectra
-from matplotlib import pyplot as plt
-import matplotlib.ticker as ticker
-from scipy.signal import find_peaks, savgol_filter
-from nmr_analyze.nn_model import process_nmr, nmr_process
 import glob
 import os
-import pandas as pd
+from itertools import combinations_with_replacement
+
 import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
 from scipy import sparse
+from scipy.signal import find_peaks, savgol_filter
 from scipy.sparse.linalg import spsolve
-from hplc_analyze import HPLC_processing as ps
-import matplotlib.ticker as ticker
-from itertools import combinations, combinations_with_replacement
+
+from hplc_analyze import hplc_dario as hplc_processing
+from ms_analyze.ms import MassSpectra
+from nmr_analyze.nn_model import process_nmr, nmr_process
 
 MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/reagents"
 
-# msreactions = [i for i in glob.glob(os.path.join(MAIN_FOLDER,'*_MS')) if 'BLANK' not in i]
-# msreagents_paths = [i for i in glob.glob(os.path.join(REAGENTS_FOLDER,'*_MS')) if 'BLANK' not in i]  #moved inside the function
 
 name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data.xlsx"))
 
@@ -75,7 +73,7 @@ ms_lib = {
 }
 
 
-def get_MS(path):
+def get_ms(path):
     """
     Returns a MassSpectra object from a path
     """
@@ -84,7 +82,7 @@ def get_MS(path):
     return spec
 
 
-def name_to_HPLC(ms_name):
+def name_to_hplc(ms_name):
     """
     Converts MS path name to HPLC
     """
@@ -93,7 +91,7 @@ def name_to_HPLC(ms_name):
     return "_".join(root)
 
 
-def name_to_NMR(ms_name):
+def name_to_nmr(ms_name):
     """
     converts MS path name to NMR
     """
@@ -209,12 +207,12 @@ def remove_naphtalene_contamination(spec, peaks):
     return filtered
 
 
-def find_TIC_peaks(TIC):
+def find_TIC_peaks(tic):
     """
     Takes a TIC object, corrects the baseline and return the peaks
     """
-    z = baseline_als(TIC[1], 100000, 1)  # baseline correction
-    TIC_flat = TIC[1] - z  # applying the baseline
+    z = baseline_als(tic[1], 100000, 1)  # baseline correction
+    TIC_flat = tic[1] - z  # applying the baseline
     TIC_noise = savgol_filter(TIC_flat, 15, 2)
     TIC_p = find_peaks(TIC_noise, height=0.1)  # finding peaks on corrected tic
     return TIC_p
@@ -223,7 +221,7 @@ def find_TIC_peaks(TIC):
 class ProcessMS:
     def __init__(self, s):
         self.s = s
-        self.spec = get_MS(self.s)
+        self.spec = get_ms(self.s)
         self.reagents = [x for x in os.path.basename(self.s).split("_")[1].split("-")]
         self.TIC = self.spec.chromatogram(normalize=True)
 
@@ -233,8 +231,8 @@ class ProcessMS:
         """
 
         try:
-            self.hplc_mix, self.hplc_diff, self.hplc_recon, _ = ps.filter_spectrum(
-                name_to_HPLC(self.s)
+            self.hplc_mix, self.hplc_diff, self.hplc_recon, _ = hplc_processing.filter_spectrum(
+                name_to_hplc(self.s)
             )
         except NameError:
             print("no HPLC found")
@@ -251,17 +249,17 @@ class ProcessMS:
         """
         Assigns variables for NMR mix and reconstructed. used only for visualization 
         """
-        self.nmr_mix = process_nmr(name_to_NMR(self.s))
+        self.nmr_mix = process_nmr(name_to_nmr(self.s))
         nmr_reagents = np.array(
             [
                 np.real(
-                    process_nmr(name_to_NMR(get_reagent_file(reagent))).spectrum[:3921]
+                    process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum[:3921]
                 )
                 for reagent in self.reagents
             ]
         )
         self.nmr_recon = np.sum(nmr_reagents, axis=0)
-        self.nmr_reactivity = nmr_process(name_to_NMR(self.s))
+        self.nmr_reactivity = nmr_process(name_to_nmr(self.s))
 
     def remove_known_masses(self):
         """
@@ -289,7 +287,7 @@ class ProcessMS:
         """
         Gathers masses from the blank run, if any peak in the TIC is present
         """
-        b_spec = get_MS(forge_blank_name(self.s))
+        b_spec = get_ms(forge_blank_name(self.s))
         b_TIC = b_spec.chromatogram(normalize=True)
         b_TIC_p = find_TIC_peaks(b_TIC)
         bg_masses = [42.0, 83.0, 79.0]  # signals of MeCN and DMSO
@@ -306,7 +304,7 @@ class ProcessMS:
         Gathers reagents masses from the mix data, taking the rt from the HPLC data
         """
         if not hasattr(self, "hplc_r_p"):
-            self.get_hplc_data
+            self.get_hplc_data()
         reag_masses = []
         DT = 0.5
         for p in np.take(
@@ -316,7 +314,7 @@ class ProcessMS:
             reag_masses.extend(np.rint(peak_mass))
         return list(set(reag_masses))
 
-    def filter_TIC_peaks(self):
+    def filter_tic_peaks(self):
         """
         Cleaning the peak lists in TIC
         removes peaks close to the reagents rt
@@ -338,18 +336,18 @@ class ProcessMS:
         )  # it persists from previous exp
         return TIC_p_new
 
-    def update_TIC(self):
+    def update_tic(self):
         """
         Refresh the TIC variable after manipulating the MassSpectra object
         """
         self.TIC = self.spec.chromatogram(normalize=True)
 
-    def plot_MS(self, ax):
+    def plot_ms(self, ax):
         """
         Plot the MS of new peaks, if present
         """
         if not hasattr(self, "TIC_p_filt"):
-            self.TIC_p_filt = self.filter_TIC_peaks()
+            self.TIC_p_filt = self.filter_tic_peaks()
         self.MS_reactivity = False if len(self.TIC_p_filt) == 0 else True
         ax.set_title(str(self.MS_reactivity))
         DT = 0.2
@@ -365,7 +363,7 @@ class ProcessMS:
                     xytext=(masses[f], peaks[f] + 0.01),
                 )
 
-    def plot_NMR(self, ax):
+    def plot_nmr(self, ax):
         """
         plot NMR
         """
@@ -377,22 +375,20 @@ class ProcessMS:
         ax.plot(self.nmr_mix.xscale, np.real(self.nmr_mix.spectrum), c="red")
         ax.invert_xaxis()
 
-    def plot_HPLC_TIC(self, ax):
+    def plot_hplc_tic(self, ax):
         """
         Plot superimposition of cleaned TIC, HPLC mix and HPLC new peaks
         """
         if not hasattr(self, "hplc_mix"):
             self.get_hplc_data()
         if not hasattr(self, "TIC_p_filt"):
-            self.TIC_p_filt = self.filter_TIC_peaks(self)
+            self.TIC_p_filt = self.filter_tic_peaks()
 
         z = baseline_als(self.TIC[1], 100000, 1)  # baseline correction
         TIC_flat = self.TIC[1] - z  # applying the baseline
         TIC_noise = savgol_filter(TIC_flat, 15, 2)
         ax.set_title(str(self.hplc_reactivity))
-        # ax2.plot(TIC[0],TIC_flat, zorder=1)
         ax.plot(self.TIC[0], TIC_noise, c="blue", zorder=1)
-        # ax2.scatter(np.take(TIC[0],TIC_p[0]), TIC_p[1]['peak_heights'], zorder=2, c='red')
 
         ax.plot(
             self.hplc_mix[:, 0],
@@ -417,17 +413,17 @@ class ProcessMS:
         )
         ax.scatter(
             self.TIC_p_filt,
-            [-0.2 for i in range(len(self.TIC_p_filt))],
+            [-0.2] * len(self.TIC_p_filt),
             zorder=2,
             c="green",
         )
 
     def calculate_couples(self):
         """
-        Prints the calculated masses of combinations of reagents, highligting matches in new peaks
+        Prints the calculated masses of combinations of reagents, highlighting matches in new peaks
         """
         if not hasattr(self, "TIC_p_filt"):
-            self.TIC_p_filt = self.filter_TIC_peaks(self)
+            self.TIC_p_filt = self.filter_tic_peaks()
 
         DT = 0.2
         peaks_masses = []
@@ -473,30 +469,35 @@ class ProcessMS:
         self.get_nmr_data()
 
         self.remove_known_masses()  # remove blank and reagents peaks
-        self.update_TIC()
+        self.update_tic()
 
         self.TIC_p = find_TIC_peaks(self.TIC)
-        self.TIC_p_filt = self.filter_TIC_peaks()
+        self.TIC_p_filt = self.filter_tic_peaks()
         self.MS_reactivity = False if self.TIC_p_filt == [] else True
         print(self.s)
         self.calculate_couples()
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(20, 10))
 
-        self.plot_MS(ax1)
-        self.plot_HPLC_TIC(ax2)
-        self.plot_NMR(ax3)
+        self.plot_ms(ax1)
+        self.plot_hplc_tic(ax2)
+        self.plot_nmr(ax3)
         plt.show()
 
 
 def ms_reactivity(filename):
     """
-    From a MS path removes blanks and reagents masses from the spectra, then cleans the peaks lists of TIC, if anything remains return True
+    From a MS path removes blanks and reagents masses from the spectra, then cleans the peaks lists of TIC,
+    if anything remains return True
     """
     pm = ProcessMS(filename)
     pm.get_hplc_data()
     pm.remove_known_masses()  # remove blank and reagents peaks
-    pm.update_TIC()
+    pm.update_tic()
     pm.TIC_p = find_TIC_peaks(pm.TIC)
-    pm.TIC_p_filt = pm.filter_TIC_peaks()
+    pm.TIC_p_filt = pm.filter_tic_peaks()
     return False if len(pm.TIC_p_filt) == 0 else True
+
+
+if __name__ == "__main__":
+    print(ms_reactivity("/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/0_17-7_MS"))

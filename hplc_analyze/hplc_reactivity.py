@@ -84,4 +84,4 @@ def hplc_process(filename):
 
 
 if __name__ == "__main__":
-    print(hplc_process("Z:\\group\\Hessam Mehr\\Data\\Discovery\\data\\0_17-7_HPLC"))
+    print(hplc_process("/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/0_17-7_HPLC"))

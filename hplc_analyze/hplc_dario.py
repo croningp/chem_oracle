@@ -1,15 +1,13 @@
-import numpy as np
-import pandas as pd
-from scipy.optimize import basinhopping, minimize
-from matplotlib import pylab as plt
-import random
-import time
-from scipy.signal import find_peaks_cwt
-import os
-from sklearn.preprocessing import LabelEncoder
 import glob
+import os
 from os import path
+
+import numpy as np
+from matplotlib import pylab as plt
+from scipy.optimize import minimize
 from scipy.signal import find_peaks
+
+from hplc_analyze import chemstation
 
 full_lib = {
     0: [(13.6, 12.0)],
@@ -34,19 +32,12 @@ full_lib = {
     19: [(3.5, 2.0)],
 }
 
-folder = "/mnt/scapa4/group/Dario Caramelli/Projects/FinderX/data/20180418-1809-photochemical_space/"
-# reag_fold = 'Z:\\group\\Dario Caramelli\\Projects\\FinderX\\data\\002_photo_space\\reagents\\'
 MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/reagents"
 
-reactions = [
-    i for i in glob.glob(os.path.join(MAIN_FOLDER, "*_HPLC")) if "BLANK" not in i
-]
-reactions_blanks = glob.glob(os.path.join(MAIN_FOLDER, "*BLANK_HPLC"))
 reagents = [
     i for i in glob.glob(os.path.join(REAGENTS_FOLDER, "*_HPLC")) if "BLANK" not in i
 ]
-reagents_blanks = glob.glob(os.path.join(REAGENTS_FOLDER, "*BLANK_HPLC"))
 
 
 def load_hplc(path):
@@ -69,8 +60,8 @@ def get_reagents(file):
     return reagents
 
 
-def get_reagent_spectrum(n):
-    file = get_reagent_file(n)
+def get_reagent_chromatogram(reagent_name: str):
+    file = get_reagent_file(reagent_name)
     x, y = load_hplc(file)
     spectrum = np.array([x, y]).T
     return spectrum
@@ -117,7 +108,7 @@ def get_exp_stuff(file):
     reagents_names = get_reagents(file)
     if reagents_names == []:
         return False, spec
-    reagents_spec = [get_reagent_spectrum(name) for name in reagents_names]
+    reagents_spec = [get_reagent_chromatogram(name) for name in reagents_names]
     lib = makelib(reagents_spec, [full_lib[int(name)] for name in reagents_names])
     return lib, spec
 
@@ -238,7 +229,7 @@ def filter_spectrum(file):
     return spec, diff, recon, filt
 
 
-def hplc_reactivity(file):
+def hplc_process(file):
     original, diff, recon, filt = filter_spectrum(file)
     new_peaks = find_peaks(diff / max(original[:, 1]), height=0.1)
     return False if len(new_peaks) == 0 or len(new_peaks) > 100 else True
@@ -253,3 +244,7 @@ def filter_and_plot(file):
     # plt.plot(recon, c='green')
     plt.title(file)
     plt.show()
+
+
+if __name__ == "__main__":
+    print(hplc_process("/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/0_17-7_HPLC"))
