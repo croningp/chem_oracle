@@ -231,9 +231,12 @@ class ProcessMS:
         """
 
         try:
-            self.hplc_mix, self.hplc_diff, self.hplc_recon, _ = hplc_processing.filter_spectrum(
-                name_to_hplc(self.s)
-            )
+            (
+                self.hplc_mix,
+                self.hplc_diff,
+                self.hplc_recon,
+                _,
+            ) = hplc_processing.filter_spectrum(name_to_hplc(self.s))
         except NameError:
             print("no HPLC found")
             return
@@ -412,10 +415,7 @@ class ProcessMS:
             c="red",
         )
         ax.scatter(
-            self.TIC_p_filt,
-            [-0.2] * len(self.TIC_p_filt),
-            zorder=2,
-            c="green",
+            self.TIC_p_filt, [-0.2] * len(self.TIC_p_filt), zorder=2, c="green",
         )
 
     def calculate_couples(self):

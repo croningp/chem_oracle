@@ -15,7 +15,8 @@ import pandas as pd
 from chem_oracle import util
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
-from hplc_analyze.hplc_reactivity import hplc_process
+# from hplc_analyze.hplc_reactivity import hplc_process
+from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import nmr_process
 
@@ -110,6 +111,15 @@ def ms_is_reactive(
             return True
     return False
 
+def ms_is_reactive_alt(
+    spectrum_dir: str,
+    starting_material_dirs: List[str],
+    min_contribution: float = 0.1,
+    mass_resolution: float = 1.0,
+    ms_file_suffix: str = "_is1",
+):
+    from ms_analyze import ms_dario
+    return ms_dario.ms_reactivity(spectrum_dir)
 
 class ExperimentManager:
     def __init__(
@@ -320,7 +330,7 @@ class ExperimentManager:
                     self.data_folder(component, data_type="MS")
                     for component in components
                 ]
-                reactivity = ms_is_reactive(data_dir, component_dirs, **params)
+                reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
             elif data_type == "HPLC":
                 reactivity = hplc_process(data_dir)
             elif data_type == "NMR":
