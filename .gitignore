@@ -1,4 +1,7 @@
+data
+.idea
 .vscode
 *.egg-info
 *.pyc
+*.ipynb
 **/.ipynb_checkpoints
