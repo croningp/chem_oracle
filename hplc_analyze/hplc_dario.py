@@ -68,13 +68,13 @@ def get_reagent_chromatogram(reagent_name: str):
 
 
 def get_spectrum(experiment_dir: str, channel: str = "A"):
-    filename = path.join(experiment_dir, f"DAD1{channel}")
+    filename = path.join(experiment_dir, "DAD1{}".format(channel))
     npz_file = filename + ".npz"
     if path.exists(npz_file):
         data = np.load(npz_file)
         return np.array([data["times"], data["values"]]).T
     else:
-        print(f"Not found {npz_file}")
+        print("Not found {}".format(npz_file))
         ch_file = filename + ".ch"
         data = chemstation.CHFile(ch_file)
         np.savez_compressed(npz_file, times=data.times, values=data.values)
@@ -232,7 +232,7 @@ def filter_spectrum(file):
 def hplc_process(file):
     original, diff, recon, filt = filter_spectrum(file)
     new_peaks = find_peaks(diff / max(original[:, 1]), height=0.1)
-    return False if len(new_peaks) == 0 or len(new_peaks) > 100 else True
+    return False if len(new_peaks[0]) == 0 or len(new_peaks) > 100 else True
 
 
 def filter_and_plot(file):
