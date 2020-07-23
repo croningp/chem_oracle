@@ -325,22 +325,26 @@ class ExperimentManager:
             self.logger.info(
                 f"Adding {data_type} data for reaction {reaction_number}: {components}."
             )
-            if data_type == "MS":
-                component_dirs = [
-                    self.data_folder(component, data_type="MS")
-                    for component in components
-                ]
-                reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
-            elif data_type == "HPLC":
-                reactivity = hplc_process(data_dir)
-            elif data_type == "NMR":
-                reactivity = nmr_process(data_dir)
+            try:
+                if data_type == "MS":
+                    component_dirs = [
+                        self.data_folder(component, data_type="MS")
+                        for component in components
+                    ]
+                    reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
+                elif data_type == "HPLC":
+                    reactivity = hplc_process(data_dir)
+                elif data_type == "NMR":
+                    reactivity = nmr_process(data_dir)
+            except Exception as e:
+                self.logger.exception(f"Error processing {data_dir}: {e}.")
+                return
             self.logger.info(f"{data_type} reactivity: {reactivity}")
             rdf = self.reactions_df
             selector = self.find_reaction(components)
             rdf.loc[selector, "reaction_number"] = reaction_number
             rdf.loc[selector, reactivity_column] = reactivity
-            self.logger.info("Update lock released.")
+        self.logger.debug("Update lock released.")
 
 
 def populate(self):
