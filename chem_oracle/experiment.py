@@ -15,7 +15,8 @@ import pandas as pd
 from chem_oracle import util
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
-from hplc_analyze.hplc_reactivity import hplc_process
+# from hplc_analyze.hplc_reactivity import hplc_process
+from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import nmr_process
 
@@ -110,6 +111,15 @@ def ms_is_reactive(
             return True
     return False
 
+def ms_is_reactive_alt(
+    spectrum_dir: str,
+    starting_material_dirs: List[str],
+    min_contribution: float = 0.1,
+    mass_resolution: float = 1.0,
+    ms_file_suffix: str = "_is1",
+):
+    from ms_analyze import ms_dario
+    return ms_dario.ms_reactivity(spectrum_dir)
 
 class ExperimentManager:
     def __init__(
@@ -120,7 +130,7 @@ class ExperimentManager:
         fingerprint_radius=1,
         fingerprint_bits=256,
         seed=None,
-        log_level=logging.WARN
+        log_level=logging.WARN,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -298,39 +308,43 @@ class ExperimentManager:
                 & (self.reactions_df["reaction_number"] == reaction_number)
             ).any()
         ):
-            self.logger.info(
+            self.logger.debug(
                 f"{data_type} data for reaction {reaction_number} between "
                 f"{components} already processed - skipping."
             )
             return
 
         if len(components) == 1:  # single reagent — ignore
-            self.logger.info(f"Only one component detected - not processing.")
+            self.logger.debug(f"Only one component detected - not processing.")
             return
 
         if self.update_lock.locked():
             self.logger.info("Waiting for update lock.")
         with self.update_lock:
-            self.logger.info("Update lock acquired.")
+            self.logger.debug("Update lock acquired.")
             self.logger.info(
                 f"Adding {data_type} data for reaction {reaction_number}: {components}."
             )
-            if data_type == "MS":
-                component_dirs = [
-                    self.data_folder(component, data_type="MS")
-                    for component in components
-                ]
-                reactivity = ms_is_reactive(data_dir, component_dirs, **params)
-            elif data_type == "HPLC":
-                reactivity = hplc_process(data_dir)
-            elif data_type == "NMR":
-                reactivity = nmr_process(data_dir)
+            try:
+                if data_type == "MS":
+                    component_dirs = [
+                        self.data_folder(component, data_type="MS")
+                        for component in components
+                    ]
+                    reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
+                elif data_type == "HPLC":
+                    reactivity = hplc_process(data_dir)
+                elif data_type == "NMR":
+                    reactivity = nmr_process(data_dir)
+            except Exception as e:
+                self.logger.exception(f"Error processing {data_dir}: {e}.")
+                return
             self.logger.info(f"{data_type} reactivity: {reactivity}")
             rdf = self.reactions_df
             selector = self.find_reaction(components)
             rdf.loc[selector, "reaction_number"] = reaction_number
             rdf.loc[selector, reactivity_column] = reactivity
-            self.logger.info("Update lock released.")
+        self.logger.debug("Update lock released.")
 
 
 def populate(self):
