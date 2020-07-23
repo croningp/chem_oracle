@@ -308,20 +308,20 @@ class ExperimentManager:
                 & (self.reactions_df["reaction_number"] == reaction_number)
             ).any()
         ):
-            self.logger.info(
+            self.logger.debug(
                 f"{data_type} data for reaction {reaction_number} between "
                 f"{components} already processed - skipping."
             )
             return
 
         if len(components) == 1:  # single reagent — ignore
-            self.logger.info(f"Only one component detected - not processing.")
+            self.logger.debug(f"Only one component detected - not processing.")
             return
 
         if self.update_lock.locked():
             self.logger.info("Waiting for update lock.")
         with self.update_lock:
-            self.logger.info("Update lock acquired.")
+            self.logger.debug("Update lock acquired.")
             self.logger.info(
                 f"Adding {data_type} data for reaction {reaction_number}: {components}."
             )
