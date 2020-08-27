@@ -18,8 +18,9 @@ from chem_oracle.util import morgan_matrix
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
-from nmr_analyze.nn_model import nmr_process
+from nmr_analyze.nn_model import nmr_process, MODELS
 
+DEFAULT_MODEL = MODELS["model9.tf"]
 
 def match(
     ms: MassSpectrum,
@@ -335,7 +336,7 @@ class ExperimentManager:
                 elif data_type == "HPLC":
                     reactivity = hplc_process(data_dir)
                 elif data_type == "NMR":
-                    reactivity = nmr_process(data_dir)
+                    reactivity = nmr_process(data_dir, DEFAULT_MODEL)
             except Exception as e:
                 self.logger.exception(f"Error processing {data_dir}: {e}.")
                 return

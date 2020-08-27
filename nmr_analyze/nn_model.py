@@ -38,7 +38,8 @@ def process_nmr(nmr_path, min_length=None):
 
 MIN_LENGTH = 3921
 DATA_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data"
-MODEL_PATH = "/mnt/orkney1/NMRModel/model8.tf"
+MODEL_HOME = "/home/group/Code/NMRModel"
+
 REAGENT_DIRS = {
     int(path.basename(p).split("_")[1]): p
     for p in glob.glob(path.join(DATA_FOLDER, "reagents", "*_1H"))
@@ -46,12 +47,15 @@ REAGENT_DIRS = {
 REAGENT_SPECTRA = [
     process_nmr(REAGENT_DIRS[i], min_length=MIN_LENGTH) for i in sorted(REAGENT_DIRS)
 ]
-MODEL = tf.keras.models.load_model(MODEL_PATH)
+MODELS = {
+    path.basename(model_path): tf.keras.models.load_model(model_path)
+    for model_path in glob.glob(path.join(MODEL_HOME, "*.tf"))
+}
 
 
-def nmr_process(folder: str) -> bool:
+def nmr_process(folder: str, model: tf.keras.Model) -> bool:
     rxn_spec = process_nmr(folder, min_length=MIN_LENGTH)
     reagents = [p for p in path.basename(folder).split("_")[1].split("-")]
     sms = reduce(add, [REAGENT_SPECTRA[int(i)] for i in reagents]).normalize()
     test_point = np.vstack([sms.spectrum.real, rxn_spec.spectrum.real])
-    return MODEL.predict(test_point[np.newaxis, ...])[0, 0] > 0.5
+    return model.predict(test_point[np.newaxis, ...])[0, 0] > 0.5
