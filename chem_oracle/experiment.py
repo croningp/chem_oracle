@@ -15,12 +15,14 @@ import pandas as pd
 from chem_oracle import util
 from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix
+
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import nmr_process, MODELS
 
 DEFAULT_MODEL = MODELS["model9.tf"]
+
 
 def match(
     ms: MassSpectrum,
@@ -112,6 +114,7 @@ def ms_is_reactive(
             return True
     return False
 
+
 def ms_is_reactive_alt(
     spectrum_dir: str,
     starting_material_dirs: List[str],
@@ -120,13 +123,15 @@ def ms_is_reactive_alt(
     ms_file_suffix: str = "_is1",
 ):
     from ms_analyze import ms_dario
+
     return ms_dario.ms_reactivity(spectrum_dir)
+
 
 class ExperimentManager:
     def __init__(
         self,
         xlsx_file: str,
-        N_props=4,
+        N_props=8,
         structural_model=True,
         fingerprint_radius=1,
         fingerprint_bits=256,
@@ -170,9 +175,9 @@ class ExperimentManager:
             self.fingerprints = morgan_matrix(
                 self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
             )
-            self.model = StructuralModel(self.fingerprints, N_props)
+            self.model = StructuralModel(self.fingerprints, N_props=N_props)
         else:
-            self.model = NonstructuralModel(self.n_compounds, N_props)
+            self.model = NonstructuralModel(self.n_compounds, N_props=N_props)
 
         # start update loop
         threading.Thread(target=self.update_loop, daemon=True).start()

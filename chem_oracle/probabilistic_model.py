@@ -5,20 +5,7 @@ import pymc3 as pm
 import pandas as pd
 import theano.tensor as tt
 
-from .util import triangular_tensor, tri_doesnt_react, indices
-
-
-def beta_params(mu, sd):
-    """
-    Beta distribution parameters to match a given mean and SD.
-    :param mu:
-    :param sd:
-    :return:
-    """
-    M = 1 / (1 - mu)
-    b = (M - 1) / M ** 3 / sd ** 2 - 1 / M
-    a = (M - 1) * b
-    return a, b
+from .util import triangular_indices, tri_doesnt_react, indices, stick_breaking
 
 
 def reactivity_disruption(observations, probabilities):
@@ -126,28 +113,36 @@ def differential_disruptions(
 
 
 class Model:
-    def __init__(self, N):
-        self.N = N
-        self.bin_indices = indices(N, 2)
-        self.tri_indices = indices(N, 3)
-
-    def sample(
+    def __init__(
         self,
-        facts: pd.DataFrame,
-        n_samples: int,
-        chains: int,
-        variational: bool,
-        **pymc3_params,
-    ) -> pm.sampling.MultiTrace:
+        N_props: int,
+        N_react: int,
+        dirichlet: bool,
+        observe: bool,
+        likelihood_sd: float,
+    ):
+        self.N_props = N_props
+        self.N_react = N_react
+        self.dirichlet = dirichlet
+        self.observe = observe
+        self.likelihood_sd = likelihood_sd
+
+        self.N_bin = self.N_props * (self.N_props - 1) // 2
+        self.N_tri = self.N_props * (self.N_props - 1) * (self.N_props - 2) // 6
+        self.bi_idx = triangular_indices(self.N_props, 2)
+        self.bi_idx.tag.test_value = np.random.randint(
+            0, 1, size=(self.N_props, self.N_props)
+        )
+        self.tri_idx = triangular_indices(self.N_props, 3, shift=self.N_bin)
+        self.tri_idx.tag.test_value = np.random.randint(
+            0, 1, size=(self.N_props, self.N_props, self.N_props)
+        )
+
+    def sample(self, facts: pd.DataFrame, **sampler_params,) -> pm.sampling.MultiTrace:
         m = self._pymc3_model(facts)
         with m:
-            if variational:
-                self.approx = pm.fit(**pymc3_params)
-                self.trace = self.approx.sample(n_samples)
-            else:
-                self.trace = pm.sample(
-                    n_samples, chains=chains, cores=chains, **pymc3_params
-                )
+            self.trace = pm.sample(**sampler_params)
+        return self.trace
 
     def condition(
         self,
@@ -197,163 +192,208 @@ class Model:
 
 
 class NonstructuralModel(Model):
-    def __init__(self, ncompounds, N=4):
-        super().__init__(N)
+    def __init__(
+        self,
+        ncompounds,
+        N_props=8,
+        N_react=1,
+        dirichlet=True,
+        observe=True,
+        likelihood_sd=0.25,
+    ):
+        super().__init__(
+            N_props=N_props,
+            N_react=N_react,
+            dirichlet=dirichlet,
+            observe=observe,
+            likelihood_sd=likelihood_sd,
+        )
         self.ncompounds = ncompounds
 
-    def _pymc3_model(self, facts):
+    def _pymc3_model(
+        self, facts,
+    ):
         bin_facts = facts[facts["compound3"] == -1]
-        tri_facts = facts[facts["compound3"] != -1]
+        bin_r1 = bin_facts.compound1.values
+        bin_r2 = bin_facts.compound2.values
 
-        bin_r1, bin_r2 = (
-            tt._shared(bin_facts["compound1"].values),
-            tt._shared(bin_facts["compound2"].values),
-        )
-        tri_r1, tri_r2, tri_r3 = (
-            tt._shared(tri_facts["compound1"].values),
-            tt._shared(tri_facts["compound2"].values),
-            tt._shared(tri_facts["compound3"].values),
-        )
+        tri_facts = facts[facts["compound3"] != -1]
+        tri_r1 = tri_facts.compound1.values
+        tri_r2 = tri_facts.compound2.values
+        tri_r3 = tri_facts.compound3.values
 
         with pm.Model() as m:
-            mem = pm.Uniform(
-                "mem", lower=0.0, upper=1.0, shape=(self.ncompounds, self.N)
+            mem_beta = pm.Beta(
+                "mem_beta", 0.9, 0.9, shape=(self.ncompounds, self.N_props + 1)
             )
-            bin_reactivities = pm.Uniform(
-                "bin_reactivities",
-                lower=0.0,
-                upper=1.0,
-                shape=self.N * (self.N - 1) // 2,
+            # the first property is non-reactive, so ignore that
+            mem = pm.Deterministic(
+                "mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
             )
-            tri_reactivities = pm.Uniform(
-                "tri_reactivities",
-                lower=0.0,
-                upper=1.0,
-                shape=self.N * (self.N - 1) * (self.N - 2) // 6,
+
+            if self.dirichlet:
+                reactivities = pm.Dirichlet(
+                    "reactivities",
+                    a=0.4 * np.ones(self.N_bin + self.N_tri),
+                    shape=(self.N_react, self.N_bin + self.N_tri),
+                ).T
+
+                # Normalize reactivities (useful with the Dirichlet prior)
+                reactivities_norm = pm.Deterministic(
+                    "reactivities_norm",
+                    reactivities / reactivities.max(axis=0, keepdims=True),
+                )
+            else:
+                reactivities_norm = pm.Beta(
+                    "reactivities_norm",
+                    alpha=1.0,
+                    beta=3.0,
+                    shape=(self.N_react, self.N_bin + self.N_tri),
+                ).T
+
+            # add zero entry for self-reactivity for each reactivity mode
+            reactivities_with_zero = tt.concatenate(
+                [tt.zeros((1, self.N_react)), reactivities_norm], axis=0
             )
-            react_tensor = triangular_tensor(
-                tri_reactivities, self.N, 3, self.tri_indices
+
+            react_matrix = pm.Deterministic(
+                "react_matrix", reactivities_with_zero[self.bi_idx, ...],
             )
-            react_matrix = triangular_tensor(
-                bin_reactivities, self.N, 2, self.bin_indices
-            )
-            # memberships of binary reactions
+            react_tensor = reactivities_with_zero[self.tri_idx, ...]
+
             m1, m2 = mem[bin_r1, :][:, :, np.newaxis], mem[bin_r2, :][:, np.newaxis, :]
+            M1, M2, M3 = mem[tri_r1, :], mem[tri_r2, :], mem[tri_r3, :]
+
             bin_doesnt_react = pm.Deterministic(
                 "bin_doesnt_react",
                 tt.prod(
-                    1 - tt.batched_dot(m1, m2) * react_matrix[np.newaxis, :, :],
-                    axis=[1, 2],
+                    1
+                    - tt.batched_dot(m1, m2)[..., np.newaxis]
+                    * react_matrix[np.newaxis, ...],
+                    axis=[1, 2, 3],
                 ),
             )
-            # memberships of ternary reactions
-            M1, M2, M3 = mem[tri_r1, :], mem[tri_r2, :], mem[tri_r3, :]
+
             tri_no_react = pm.Deterministic(
                 "tri_doesnt_react",
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
-            # observations
-            hplc_obs_binary = pm.Bernoulli(
-                "reacts_binary_HPLC",
-                p=1 - bin_doesnt_react,
-                observed=bin_facts["HPLC_reactivity"],
-            )
-            ms_obs_binary = pm.Bernoulli(
-                "reacts_binary_MS",
-                p=1 - bin_doesnt_react,
-                observed=bin_facts["MS_reactivity"],
-            )
-            nmr_obs_binary = pm.Bernoulli(
-                "reacts_binary_NMR",
-                p=1 - bin_doesnt_react,
-                observed=bin_facts["NMR_reactivity"],
-            )
-            hplc_obs_ternary = pm.Bernoulli(
-                "reacts_ternary_HPLC",
-                p=1 - tri_no_react,
-                observed=tri_facts["HPLC_reactivity"],
-            )
-            ms_obs_ternary = pm.Bernoulli(
-                "reacts_ternary_MS",
-                p=1 - tri_no_react,
-                observed=tri_facts["MS_reactivity"],
-            )
-            nmr_obs_ternary = pm.Bernoulli(
-                "reacts_ternary_NMR",
-                p=1 - tri_no_react,
-                observed=tri_facts["NMR_reactivity"],
-            )
+            if self.observe:
+                nmr_obs_binary = pm.Normal(
+                    "reacts_binary_NMR",
+                    mu=1 - bin_doesnt_react,
+                    sd=self.likelihood_sd,
+                    observed=bin_facts["NMR_reactivity"],
+                )
+                nmr_obs_ternary = pm.Normal(
+                    "reacts_ternary_NMR",
+                    mu=1 - tri_no_react,
+                    sd=self.likelihood_sd,
+                    observed=tri_facts["NMR_reactivity"],
+                )
+                hplc_obs_binary = pm.Normal(
+                    "reacts_binary_HPLC",
+                    mu=1 - bin_doesnt_react,
+                    sd=self.likelihood_sd,
+                    observed=bin_facts["HPLC_reactivity"],
+                )
+                hplc_obs_ternary = pm.Normal(
+                    "reacts_ternary_HPLC",
+                    mu=1 - tri_no_react,
+                    sd=self.likelihood_sd,
+                    observed=tri_facts["HPLC_reactivity"],
+                )
+
         return m
 
 
 class StructuralModel(Model):
-    def __init__(self, fingerprint_matrix: np.ndarray, N: int = 4):
+    def __init__(
+        self,
+        fingerprint_matrix: np.ndarray,
+        N_props=8,
+        N_react=1,
+        dirichlet=True,
+        observe=True,
+        likelihood_sd=0.25,
+    ):
         """Bayesian reactivity model informed by structural fingerprints.
+        TODO: Update docs
 
         Args:
             fingerprint_matrix (n_compounds × fingerprint_length matrix):
                 a numpy matrix row i of which contains the fingerprint bits
                 for the i-th compound.
-            N (int, optional): Number of abstract properties. Defaults to 4.
+            N_props (int, optional): Number of abstract properties. Defaults to 4.
         """
         # """fingerprints: Matrix of Morgan fingerprints for reagents."""
-        super().__init__(N)
+
+        super().__init__(
+            N_props=N_props,
+            N_react=N_react,
+            dirichlet=dirichlet,
+            observe=observe,
+            likelihood_sd=likelihood_sd,
+        )
+
         self.fingerprints = tt._shared(fingerprint_matrix)
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
     def _pymc3_model(self, facts):
         bin_facts = facts[facts["compound3"] == -1]
-        tri_facts = facts[facts["compound3"] != -1]
+        bin_r1 = bin_facts.compound1.values
+        bin_r2 = bin_facts.compound2.values
 
-        bin_r1, bin_r2 = (
-            tt._shared(bin_facts["compound1"].values),
-            tt._shared(bin_facts["compound2"].values),
-        )
-        tri_r1, tri_r2, tri_r3 = (
-            tt._shared(tri_facts["compound1"].values),
-            tt._shared(tri_facts["compound2"].values),
-            tt._shared(tri_facts["compound3"].values),
-        )
+        tri_facts = facts[facts["compound3"] != -1]
+        tri_r1 = tri_facts.compound1.values
+        tri_r2 = tri_facts.compound2.values
+        tri_r3 = tri_facts.compound3.values
 
         with pm.Model() as m:
-            mem = pm.Beta(
-                "mem", alpha=1.0, beta=3.0, shape=(self.fingerprint_length, self.N)
+            mem_beta = pm.Beta(
+                "mem_beta", 0.9, 0.9, shape=(self.fingerprint_length, self.N_props + 1)
+            )
+            # the first property is non-reactive, so ignore that
+            mem = pm.Deterministic(
+                "mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
             )
 
-            bin_reactivities = pm.Uniform(
-                "bin_reactivities",
-                lower=0.0,
-                upper=1.0,
-                shape=self.N * (self.N - 1) // 2,
-            )
-            tri_reactivities = pm.Uniform(
-                "tri_reactivities",
-                lower=0.0,
-                upper=1.0,
-                shape=self.N * (self.N - 1) * (self.N - 2) // 6,
+            if self.dirichlet:
+                reactivities = pm.Dirichlet(
+                    "reactivities",
+                    a=0.4 * np.ones(self.N_bin + self.N_tri),
+                    shape=(self.N_react, self.N_bin + self.N_tri),
+                ).T
+
+                # Normalize reactivities (useful with the Dirichlet prior)
+                reactivities_norm = pm.Deterministic(
+                    "reactivities_norm",
+                    reactivities / reactivities.max(axis=0, keepdims=True),
+                )
+            else:
+                reactivities_norm = pm.Beta(
+                    "reactivities_norm",
+                    alpha=1.0,
+                    beta=3.0,
+                    shape=(self.N_react, self.N_bin + self.N_tri),
+                ).T
+
+            # add zero entry for self-reactivity for each reactivity mode
+            reactivities_with_zero = tt.concatenate(
+                [tt.zeros((1, self.N_react)), reactivities_norm], axis=0
             )
 
-            react_tensor = triangular_tensor(
-                tri_reactivities, self.N, 3, self.tri_indices
+            react_matrix = pm.Deterministic(
+                "react_matrix", reactivities_with_zero[self.bi_idx, :],
             )
-            react_matrix = triangular_tensor(
-                bin_reactivities, self.N, 2, self.bin_indices
-            )
+            react_tensor = reactivities_with_zero[self.tri_idx, ...]
 
-            # memberships of binary reactions
+            # Convert fingerprint memberships to molecule memberships
             fp1, fp2 = self.fingerprints[bin_r1, :], self.fingerprints[bin_r2, :]
             m1, m2 = (
                 tt.max(tt.mul(fp1[:, :, np.newaxis], mem), axis=1)[:, :, np.newaxis],
                 tt.max(tt.mul(fp2[:, :, np.newaxis], mem), axis=1)[:, np.newaxis, :],
             )
-            bin_doesnt_react = pm.Deterministic(
-                "bin_doesnt_react",
-                tt.prod(
-                    1 - tt.batched_dot(m1, m2) * react_matrix[np.newaxis, :, :],
-                    axis=[1, 2],
-                ),
-            )
-            # memberships of ternary reactions
             FP1, FP2, FP3 = (
                 self.fingerprints[tri_r1, :],
                 self.fingerprints[tri_r2, :],
@@ -364,46 +404,45 @@ class StructuralModel(Model):
                 tt.max(tt.mul(FP2[:, :, np.newaxis], mem), axis=1),
                 tt.max(tt.mul(FP3[:, :, np.newaxis], mem), axis=1),
             )
+
+            bin_doesnt_react = pm.Deterministic(
+                "bin_doesnt_react",
+                tt.prod(
+                    1
+                    - tt.batched_dot(m1, m2)[..., np.newaxis]
+                    * react_matrix[np.newaxis, ...],
+                    axis=[1, 2, 3],
+                ),
+            )
+
             tri_no_react = pm.Deterministic(
                 "tri_doesnt_react",
                 tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
             )
+            if self.observe:
+                nmr_obs_binary = pm.Normal(
+                    "reacts_binary_NMR",
+                    mu=1 - bin_doesnt_react,
+                    sd=self.likelihood_sd,
+                    observed=bin_facts["NMR_reactivity"],
+                )
+                nmr_obs_ternary = pm.Normal(
+                    "reacts_ternary_NMR",
+                    mu=1 - tri_no_react,
+                    sd=self.likelihood_sd,
+                    observed=tri_facts["NMR_reactivity"],
+                )
+                hplc_obs_binary = pm.Normal(
+                    "reacts_binary_HPLC",
+                    mu=1 - bin_doesnt_react,
+                    sd=self.likelihood_sd,
+                    observed=bin_facts["HPLC_reactivity"],
+                )
+                hplc_obs_ternary = pm.Normal(
+                    "reacts_ternary_HPLC",
+                    mu=1 - tri_no_react,
+                    sd=self.likelihood_sd,
+                    observed=tri_facts["HPLC_reactivity"],
+                )
 
-            # TODO: Revert to Bernoulli?
-            hplc_obs_binary = pm.Normal(
-                "reacts_binary_HPLC",
-                mu=1 - bin_doesnt_react,
-                sd=0.05,
-                observed=bin_facts["HPLC_reactivity"],
-            )
-            ms_obs_binary = pm.Normal(
-                "reacts_binary_MS",
-                mu=1 - bin_doesnt_react,
-                sd=0.05,
-                observed=bin_facts["MS_reactivity"],
-            )
-            nmr_obs_binary = pm.Normal(
-                "reacts_binary_NMR",
-                mu=1 - bin_doesnt_react,
-                sd=0.05,
-                observed=bin_facts["NMR_reactivity"],
-            )
-            hplc_obs_ternary = pm.Normal(
-                "reacts_ternary_HPLC",
-                mu=1 - tri_no_react,
-                sd=0.05,
-                observed=tri_facts["HPLC_reactivity"],
-            )
-            ms_obs_ternary = pm.Normal(
-                "reacts_ternary_MS",
-                mu=1 - tri_no_react,
-                sd=0.05,
-                observed=tri_facts["MS_reactivity"],
-            )
-            nmr_obs_ternary = pm.Normal(
-                "reacts_ternary_NMR",
-                mu=1 - tri_no_react,
-                sd=0.05,
-                observed=tri_facts["NMR_reactivity"],
-            )
         return m
