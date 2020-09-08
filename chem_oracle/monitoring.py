@@ -1,6 +1,6 @@
 import logging
 from os import path
-from typing import Callable, Any
+from typing import Any, Callable
 
 from watchdog.events import PatternMatchingEventHandler
 

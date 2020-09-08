@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from os import path
 from shutil import copyfile
-from typing import List, Iterable
+from typing import Iterable, List
 
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ from chem_oracle.util import morgan_matrix
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
-from nmr_analyze.nn_model import nmr_process, MODELS
+from nmr_analyze.nn_model import MODELS, nmr_process
 
 DEFAULT_MODEL = MODELS["model9.tf"]
 

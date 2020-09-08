@@ -1,11 +1,11 @@
 import copy
 
 import numpy as np
-import pymc3 as pm
 import pandas as pd
+import pymc3 as pm
 import theano.tensor as tt
 
-from .util import triangular_indices, tri_doesnt_react, indices, stick_breaking
+from ..util import indices, stick_breaking, tri_doesnt_react, triangular_indices
 
 
 def reactivity_disruption(observations, probabilities):
