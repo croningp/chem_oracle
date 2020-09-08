@@ -8,8 +8,7 @@ import pandas as pd
 import pymc3 as pm
 import theano.tensor as tt
 from matplotlib import pyplot as plt
-
-from chem_oracle import rdkit_fns
+from rdkit import Chem
 
 
 def indices(N: int, ndims: int) -> np.ndarray:
@@ -37,42 +36,27 @@ def indices(N: int, ndims: int) -> np.ndarray:
     return np.array(v, dtype="int")
 
 
-def symmteric_rank2(i, j):
-    I, J = np.maximum(i, j), np.minimum(i, j)
-    return I * (I + 1) / 2 + J
-
-
-def symmetric_rank2_indices(N: int):
-    return np.fromfunction(symmteric_rank2, (N, N)).astype("int")
-
-
-def symmetric_rank3(*args):
-    I, J, K = sorted(args)
-    return I * (I + 1) * (I + 2) / 6 + J * (J + 1) / 2 + K
-
-
-def symmetric_rank3_indices(N: int):
-    return np.array(
-        [
-            [[symmetric_rank3(i, j, k) for k in range(N)] for j in range(N)]
-            for i in range(N)
-        ],
-        dtype="int",
-    )
-
-
-def triangular_tensor(v, N, ndims, indices):
+def triangular_indices(N, ndims, shift=0):
     """
-    v: vector of unique reactivities
     N: is the number of properties len(v) =  N*(N-1)*...*(N-(ndim-1))/ndim!
     ndim: number of tensor dimensions
-    indices: tensor indices of non-zero elements
     """
-    t = tt.zeros(tuple(N for _ in range(ndims)))
-    for i, ind in enumerate(indices):
+    idx = indices(N, ndims)
+    t = tt.zeros(tuple(N for _ in range(ndims)), dtype="int")
+    for i, ind in enumerate(idx):
         for perm in permutations(ind):
-            t = tt.set_subtensor(t[perm], v[i])
+            t = tt.set_subtensor(t[perm], i + shift + 1)
     return t
+
+
+def stick_breaking(beta, normalize=False):
+    t1 = tt.ones((*beta.shape[:-1], 1))
+    t2 = tt.extra_ops.cumprod(1 - beta, axis=-1)[..., :-1]
+    portion_remaining = tt.concatenate([t1, t2], axis=-1)
+    res = beta * portion_remaining
+    if normalize:
+        return res / res.max(axis=1, keepdims=True)
+    return res
 
 
 def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
@@ -80,40 +64,53 @@ def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
     tri_doesnt_react_binary = (
         tt.prod(
             1
-            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
+            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
+                ..., np.newaxis
+            ]
+            * react_matrix[np.newaxis, ...],
+            axis=[1, 2, 3],
         )
         * tt.prod(
             1
-            - tt.batched_dot(M1[:, :, np.newaxis], M3[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
+            - tt.batched_dot(M1[:, :, np.newaxis], M3[:, np.newaxis, :])[
+                ..., np.newaxis
+            ]
+            * react_matrix[np.newaxis, ...],
+            axis=[1, 2, 3],
         )
         * tt.prod(
             1
-            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])
-            * react_matrix[np.newaxis, :, :],
-            axis=[1, 2],
+            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
+                ..., np.newaxis
+            ]
+            * react_matrix[np.newaxis, ...],
+            axis=[1, 2, 3],
         )
     )
     # 1 - (probability that genuine three-component reaction occurs)
     tri_doesnt_react_ternary = tt.prod(
         1
         - tt.batched_dot(
-            tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
-                :, :, :, np.newaxis
-            ],
+            tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[..., np.newaxis],
             M3[:, np.newaxis, :],
-        )
-        * react_tensor[np.newaxis, :, :, :],
-        axis=[1, 2, 3],
+        )[..., np.newaxis]
+        * react_tensor[np.newaxis, ...],
+        axis=[1, 2, 3, 4],
     )
+
     return tri_doesnt_react_binary * tri_doesnt_react_ternary
 
 
+def morgan_bits(smiles: str, radius: int, nbits: int) -> np.ndarray:
+    mol = Chem.MolFromSmiles(smiles)
+    result = np.zeros(nbits)
+    morgan_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
+    result[morgan_fp.GetOnBits()] = 1.0
+    return result.tolist()
+
+
 def morgan_matrix(mols, radius, nbits):
-    return np.stack([rdkit_fns.morgan_bits(mol, radius, nbits) for mol in mols])
+    return np.stack([morgan_bits(mol, radius, nbits) for mol in mols])
 
 
 def split_bin_tri(facts):
