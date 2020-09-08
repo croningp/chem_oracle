@@ -8,8 +8,7 @@ import pandas as pd
 import pymc3 as pm
 import theano.tensor as tt
 from matplotlib import pyplot as plt
-
-from chem_oracle import rdkit_fns
+from rdkit import Chem
 
 
 def indices(N: int, ndims: int) -> np.ndarray:
@@ -112,8 +111,16 @@ def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
     return tri_doesnt_react_binary * tri_doesnt_react_ternary
 
 
+def morgan_bits(smiles: str, radius: int, nbits: int) -> np.ndarray:
+    mol = Chem.MolFromSmiles(smiles)
+    result = np.zeros(nbits)
+    morgan_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
+    result[morgan_fp.GetOnBits()] = 1.0
+    return result.tolist()
+
+
 def morgan_matrix(mols, radius, nbits):
-    return np.stack([rdkit_fns.morgan_bits(mol, radius, nbits) for mol in mols])
+    return np.stack([morgan_bits(mol, radius, nbits) for mol in mols])
 
 
 def split_bin_tri(facts):
