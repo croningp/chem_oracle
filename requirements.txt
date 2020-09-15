@@ -1,4 +1,6 @@
 git+http://datalore.chem.gla.ac.uk/DMC/advionwrapper.git
+jax
+numpyro
 theano
 pymc3
 rdkit
@@ -18,3 +20,7 @@ scikit-learn
 numpy
 matplotlib
 theano
+setuptools
+pandas
+execnet
+tensorflow-gpu

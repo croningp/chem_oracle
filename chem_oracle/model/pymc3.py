@@ -1,13 +1,10 @@
-import copy
-
 import numpy as np
 import pandas as pd
+import pymc3 as pm
 import theano.tensor as tt
 
-import pymc3 as pm
-
 from .common import disruptions, differential_disruptions
-from ..util import indices, stick_breaking, tri_doesnt_react, triangular_indices
+from ..util import stick_breaking, tri_doesnt_react, triangular_indices
 
 
 def log_likelihood(model: pm.Model, trace, var):

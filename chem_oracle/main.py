@@ -42,5 +42,5 @@ def main(manager: ExperimentManager):
 
 
 if __name__ == "__main__":
-    manager = ExperimentManager(sys.argv[-1])
-    manager = main(manager)
+    mgr = ExperimentManager(sys.argv[-1])
+    mgr = main(mgr)

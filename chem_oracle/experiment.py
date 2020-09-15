@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.model import numpyro, pymc3
+from chem_oracle.model import numpyro
 from chem_oracle.util import morgan_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
@@ -218,10 +218,10 @@ class ExperimentManager:
             )
 
     def write_experiments(self, backup=True):
+        timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-")
+        dst_file, ext = path.splitext(self.xlsx_file)
+        dst_file = dst_file + timestamp + ext
         if backup and path.exists(self.xlsx_file):
-            timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-")
-            dst_file, ext = path.splitext(self.xlsx_file)
-            dst_file = dst_file + timestamp + ext
             copyfile(self.xlsx_file, dst_file)
         with pd.ExcelWriter(self.xlsx_file) as writer:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
@@ -234,7 +234,8 @@ class ExperimentManager:
                     "reagents": self.reagents_df,
                     "reactions": self.reactions_df,
                     "trace": self.model.trace,
-                }
+                },
+                f,
             )
 
     def update_loop(self, backup=True, **params):

@@ -1,23 +1,20 @@
 import logging
-import math
 import os
 import pickle
-from itertools import combinations, permutations
+from itertools import permutations
 from typing import Dict
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import numpyro.distributions as dist
 import pandas as pd
 from jax import ops
 from jax.random import PRNGKey
-from matplotlib import pyplot as plt
-
-import numpyro.distributions as dist
-from numpyro import deterministic, plate, sample
+from numpyro import deterministic, sample
 from numpyro.infer import MCMC, NUTS
-from numpyro.util import set_platform
 from numpyro.infer.util import log_likelihood
+from numpyro.util import set_platform
 
 from .common import disruptions, differential_disruptions
 from ..util import indices
@@ -28,7 +25,7 @@ set_platform("gpu")
 if jax.devices()[0].__class__.__name__ != "GpuDevice":
     devs = jax.devices()
     xla_flags = os.environ["XLA_FLAGS"]
-    logging.warn(f"Not running on GPU!\nDevices: {devs}\nXLA_FLAGS={xla_flags}")
+    logging.warning(f"Not running on GPU!\nDevices: {devs}\nXLA_FLAGS={xla_flags}")
 
 SAMPLED_RVS = [
     "mem_beta",
