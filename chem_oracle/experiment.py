@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+import pickle
 import random
 import threading
 import time
@@ -224,6 +225,16 @@ class ExperimentManager:
         with pd.ExcelWriter(self.xlsx_file) as writer:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
+        # also save dataframe + trace as pickle
+        pickle_file = dst_file + timestamp + ".pkl"
+        with open(pickle_file, "wb") as f:
+            pickle.dump(
+                {
+                    "reagents": self.reagents_df,
+                    "reactions": self.reactions_df,
+                    "trace": self.model.trace,
+                }
+            )
 
     def update_loop(self, backup=True, **params):
         while True:
