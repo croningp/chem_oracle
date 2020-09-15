@@ -124,7 +124,7 @@ def ms_is_reactive_alt(
 ):
     from ms_analyze import ms_dario
 
-    return ms_dario.ms_reactivity(spectrum_dir)
+    return ms_dario.ms_reactivity(spectrum_dir) and 1.0 or 0.0
 
 
 class ExperimentManager:

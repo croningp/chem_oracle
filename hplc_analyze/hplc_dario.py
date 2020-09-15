@@ -232,7 +232,7 @@ def filter_spectrum(file):
 def hplc_process(file):
     original, diff, recon, filt = filter_spectrum(file)
     new_peaks = find_peaks(diff / max(original[:, 1]), height=0.1)
-    return False if len(new_peaks[0]) == 0 or len(new_peaks) > 100 else True
+    return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 100 else 1.0
 
 
 def filter_and_plot(file):

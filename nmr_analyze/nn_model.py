@@ -58,4 +58,4 @@ def nmr_process(folder: str, model: tf.keras.Model) -> bool:
     reagents = [p for p in path.basename(folder).split("_")[1].split("-")]
     sms = reduce(add, [REAGENT_SPECTRA[int(i)] for i in reagents]).normalize()
     test_point = np.vstack([sms.spectrum.real, rxn_spec.spectrum.real])
-    return model.predict(test_point[np.newaxis, ...])[0, 0] > 0.5
+    return model.predict(test_point[np.newaxis, ...])[0, 0] > 0.5 and 1.0 or 0.0
