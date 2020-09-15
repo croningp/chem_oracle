@@ -2,114 +2,29 @@ import copy
 
 import numpy as np
 import pandas as pd
-import pymc3 as pm
 import theano.tensor as tt
 
+import pymc3 as pm
+
+from .common import disruptions, differential_disruptions
 from ..util import indices, stick_breaking, tri_doesnt_react, triangular_indices
 
 
-def reactivity_disruption(observations, probabilities):
-    pi = np.mean(probabilities, axis=1)
-    n_exp = observations.shape[0]
-    res = np.zeros((n_exp, n_exp))
-    for i in range(n_exp):
-        obs_pos = probabilities[:, observations[i, :] == 1]
-        obs_neg = probabilities[:, observations[i, :] == 0]
-        mu_ji = np.mean(obs_pos, axis=1)
-        mu_ji_bar = np.mean(obs_neg, axis=1)
-        for j in range(n_exp):
-            res[i, j] = pi[i] * np.abs(mu_ji[j] - pi[j]) + (1 - pi[i]) * np.abs(
-                mu_ji_bar[j] - pi[j]
-            )
+def log_likelihood(model: pm.Model, trace, var):
+    # need to cache these for performance
+    logp_func = model[
+        var
+    ].logp_elemwise  # [rv.logp_elemwise for rv in model.observed_RVs]
 
-    np.fill_diagonal(res, 0.0)
-    return res
+    point_likelihoods = np.array([logp_func(point) for point in trace.points()])
+    return point_likelihoods
 
 
-def uncertainty_disruption(observations, probabilities):
-    pi = np.mean(probabilities, axis=1)
-    stdj = np.std(probabilities, axis=1)
-    n_exp = observations.shape[0]
-    res = np.zeros((n_exp, n_exp))
-    for i in range(n_exp):
-        obs_pos = probabilities[:, observations[i, :] == 1]
-        obs_neg = probabilities[:, observations[i, :] == 0]
-        stdji = np.std(obs_pos, axis=1)
-        stdji_bar = np.std(obs_neg, axis=1)
-        for j in range(n_exp):
-            res[i, j] = pi[i] * np.abs(stdji[j] - stdj[j]) + (1 - pi[i]) * np.abs(
-                stdji_bar[j] - stdj[j]
-            )
+def log_likelihoods(model: pm.Model, trace):
+    # need to cache these for performance
+    rvs = model.observed_RVs
 
-    np.fill_diagonal(res, 0.0)
-    return res
-
-
-def disruptions(facts, trace, method_name: str):
-    # binary reactions
-    bins = facts[(facts["compound3"] == -1)]
-    tris = facts[(facts["compound3"] != -1)]
-    observations = np.hstack(
-        (
-            trace[f"reacts_binary_{method_name}_missing"],
-            trace[f"reacts_ternary_{method_name}_missing"],
-        )
-    ).T
-    probabilities = np.hstack(
-        (
-            1
-            - trace["bin_doesnt_react"][:, pd.isna(bins[f"{method_name}_reactivity"])],
-            1
-            - trace["tri_doesnt_react"][:, pd.isna(tris[f"{method_name}_reactivity"])],
-        )
-    ).T
-    return (
-        reactivity_disruption(observations, probabilities).sum(axis=1),
-        uncertainty_disruption(observations, probabilities).sum(axis=1),
-    )
-
-
-def differential_disruptions(
-    facts, trace, method_name: str, n: int = 5, sort_by_reactivity: bool = False
-):
-    # create a copy of dataframe and remove existing disruption values
-    f = facts.copy()
-    f["reactivity_disruption"] = np.nan
-    f["uncertainty_disruption"] = np.nan
-    # convert trace to dictionary so we can mutate it!
-    t = {v: trace[v] for v in trace.varnames}
-    for i in range(n):
-        rr, uu = disruptions(f, t, method_name)
-        bin_missings = (f["compound3"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
-        tri_missings = (f["compound3"] != -1) & pd.isna(f[f"{method_name}_reactivity"])
-        n_bin = bin_missings.sum()
-        if sort_by_reactivity:
-            top_rxn = np.argmax(rr)
-        else:
-            top_rxn = np.argmax(uu)
-        max_r = rr[top_rxn]
-        max_u = uu[top_rxn]
-        if top_rxn < n_bin:
-            var_name = f"reacts_binary_{method_name}_missing"
-            index_name = f.index[bin_missings]
-        else:
-            var_name = f"reacts_ternary_{method_name}_missing"
-            index_name = f.index[tri_missings]
-            top_rxn -= n_bin
-        # assign top pick as reactive or unreactive
-        outcome = t[var_name].mean() > 0.5
-        f.loc[index_name[top_rxn], f"{method_name}_reactivity"] = outcome
-        # assign disruption score in dataframe
-        f.loc[index_name[top_rxn], "reactivity_disruption"] = max_r
-        f.loc[index_name[top_rxn], "uncertainty_disruption"] = max_u
-        # remove MCMC samples incompatible with `outcome` from MCMC trace
-        valid_indices = t[var_name][:, top_rxn] == outcome
-        for var in t:
-            t[var] = t[var][valid_indices, :]
-        # remove experiment from MCMC trace
-        t[var_name] = np.delete(t[var_name], top_rxn, axis=1)
-
-    return (f["reactivity_disruption"], f["uncertainty_disruption"])
+    return {rv.name: log_likelihood(model, trace, rv.name) for rv in rvs}
 
 
 class Model:
@@ -144,10 +59,39 @@ class Model:
             self.trace = pm.sample(**sampler_params)
         return self.trace
 
+    def load_trace(self, facts: pd.DataFrame, trace_dir: str):
+        m = self._pymc3_model(facts)
+        with m:
+            self.trace = pm.load_trace(trace_dir)
+
+    def log_likelihoods(self, facts: pd.DataFrame, trace=None):
+        trace = trace or self.trace
+        return log_likelihoods(self._pymc3_model(facts), trace)
+
+    def experiment_likelihoods(self, facts: pd.DataFrame, trace=None):
+        trace = trace or self.trace
+        likelihoods = self.log_likelihoods(facts, trace)
+        bins = likelihoods["reacts_binary_NMR"]
+        tris = likelihoods["reacts_ternary_NMR"]
+        result = []
+        bin_idx = 0
+        tri_idx = 0
+        for _, (_, _, _, c3) in enumerate(
+            facts[["compound1", "compound2", "compound3"]].itertuples()
+        ):
+            if c3 == -1:
+                # binary reaction
+                result.append(bins[:, bin_idx])
+                bin_idx += 1
+            else:
+                result.append(tris[:, tri_idx])
+                tri_idx += 1
+        return np.stack(result).T
+
     def condition(
         self,
         facts: pd.DataFrame,
-        method_name: str = "MS",
+        method_name: str = "NMR",
         differential: bool = True,
         **disruption_params,
     ) -> pd.DataFrame:
