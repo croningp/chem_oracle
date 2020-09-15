@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import pickle
 from itertools import combinations, permutations
 from typing import Dict
 
@@ -16,7 +17,9 @@ import numpyro.distributions as dist
 from numpyro import deterministic, plate, sample
 from numpyro.infer import MCMC, NUTS
 from numpyro.util import set_platform
+from numpyro.infer.util import log_likelihood
 
+from .common import disruptions, differential_disruptions
 from ..util import indices
 
 # force GPU
@@ -26,6 +29,11 @@ if jax.devices()[0].__class__.__name__ != "GpuDevice":
     devs = jax.devices()
     xla_flags = os.environ["XLA_FLAGS"]
     logging.warn(f"Not running on GPU!\nDevices: {devs}\nXLA_FLAGS={xla_flags}")
+
+SAMPLED_RVS = [
+    "mem_beta",
+    "reactivities_norm",
+]
 
 
 def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
@@ -112,14 +120,56 @@ class Model:
         self.tri_idx = triangular_indices(self.N_props, 3, shift=self.N_bin)
 
     def sample(
-        self, facts: pd.DataFrame, draws=1000, tune=500, **sampler_params
+        self,
+        facts: pd.DataFrame,
+        draws=500,
+        tune=500,
+        model_params=None,
+        **sampler_params,
     ) -> Dict:
         nuts_kernel = NUTS(self._pyro_model)
         mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_params)
         rng_key = PRNGKey(0)
-        run = mcmc.run(rng_key, facts, extra_fields=("potential_energy",),)
-        self.trace = mcmc.get_samples()
+        mcmc.run(
+            rng_key, facts, *(model_params or []), extra_fields=("potential_energy",),
+        )
+        self.trace = {**mcmc.get_samples(), **mcmc.get_extra_fields()}
+        # convert trace data to plain old numpy arrays
+        self.trace = {k: np.array(v) for k,v in self.trace.items()}
         return self.trace
+
+    def load_trace(self, facts: pd.DataFrame, trace_file: str):
+        with open(trace_file, "rb") as f:
+            self.trace = pickle.load(f)
+
+    def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
+        trace = trace or self.trace
+        trace = {
+            k: v for k, v in trace.items() if k in SAMPLED_RVS
+        }  # only keep sampled variables
+        return log_likelihood(
+            self._pyro_model, trace, facts, False  # do not impute - important!
+        )
+
+    def experiment_likelihoods(self, facts: pd.DataFrame, trace=None):
+        trace = trace or self.trace
+        likelihoods = self.log_likelihoods(facts, trace)
+        bins = likelihoods["reacts_binary_NMR"]
+        tris = likelihoods["reacts_ternary_NMR"]
+        result = []
+        bin_idx = 0
+        tri_idx = 0
+        for _, (_, _, _, c3) in enumerate(
+            facts[["compound1", "compound2", "compound3"]].itertuples()
+        ):
+            if c3 == -1:
+                # binary reaction
+                result.append(bins[:, bin_idx])
+                bin_idx += 1
+            else:
+                result.append(tris[:, tri_idx])
+                tri_idx += 1
+        return np.stack(result).T
 
     def condition(
         self,
@@ -155,23 +205,22 @@ class Model:
             new_facts[f"{method_name}_reactivity"]
         )
         n_bin = bin_missings.sum()
+
         if differential:
             r, u = differential_disruptions(
                 new_facts, self.trace, method_name, **disruption_params
             )
         else:
             r, u = disruptions(new_facts, self.trace, method_name)
-        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[:n_bin]
-        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[:n_bin]
-        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[n_bin:]
-        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[n_bin:]
+        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[r.index[bin_missings][:n_bin]]
+        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[u.index[bin_missings][:n_bin]]
+        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[r.index[tri_missings][n_bin:]]
+        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[u.index[tri_missings][n_bin:]]
         return new_facts
 
 
 class NonstructuralModel(Model):
-    def __init__(
-        self, ncompounds, N_props=8, observe=True, likelihood_sd=0.25,
-    ):
+    def __init__(self, ncompounds, N_props=8, observe=True, likelihood_sd=0.25):
         super().__init__(
             N_props=N_props, observe=observe, likelihood_sd=likelihood_sd,
         )
