@@ -352,39 +352,39 @@ class ExperimentManager:
             rdf.loc[selector, reactivity_column] = reactivity
         self.logger.debug("Update lock released.")
 
-
-def populate(self):
-    """
-        Add entries for missing reactions to reaction dataframe.
-        Existing entries are left intact.
+    def populate(self):
         """
-    all_compounds = self.reagents_df["reagent_number"]
-    n_compounds = len(all_compounds)
-    df = self.reactions_df
-    idx = len(df)
-    for i1, c1 in enumerate(all_compounds):
-        for i2, c2 in enumerate(all_compounds):
-            if i2 <= i1:
-                continue
-            for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
-                # check whether entry already exists
-                if df.query(
-                    "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
-                ).empty:
-                    # add missing entry and increment index
-                    self.reactions_df.loc[idx] = (
-                        None,  # reactor_number
-                        c1,  # compound1
-                        c2,  # compound2
-                        c3,  # compound3
-                        None,  # NMR_reactivity
-                        None,  # MS_reactivity
-                        None,  # HPLC_reactivity
-                        None,  # avg_expected_reactivity
-                        None,  # std_expected_reactivity
-                    )
-                    idx += 1
-    # convert compound numbers back to int (pandas bug)
-    self.reactions_df = df.astype(
-        {"compound1": "int", "compound2": "int", "compound3": "int"}
-    )
+            Add entries for missing reactions to reaction dataframe.
+            Existing entries are left intact.
+            """
+        all_compounds = self.reagents_df["reagent_number"]
+        df = self.reactions_df
+        idx = len(df)
+        for i1, c1 in enumerate(all_compounds):
+            for i2, c2 in enumerate(all_compounds):
+                if i2 <= i1:
+                    continue
+                for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
+                    # check whether entry already exists
+                    if df.query(
+                        "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
+                    ).empty:
+                        # add missing entry and increment index
+                        self.reactions_df.loc[idx] = (
+                            None,  # reactor_number
+                            c1,  # compound1
+                            c2,  # compound2
+                            c3,  # compound3
+                            None,  # NMR_reactivity
+                            None,  # MS_reactivity
+                            None,  # HPLC_reactivity
+                            None,  # avg_expected_reactivity
+                            None,  # std_expected_reactivity
+                            None,  # reactivity_disruption
+                            None,  # uncertainty_disruption
+                        )
+                        idx += 1
+        # convert compound numbers back to int (pandas bug)
+        self.reactions_df = df.astype(
+            {"compound1": "int", "compound2": "int", "compound3": "int"}
+        )
