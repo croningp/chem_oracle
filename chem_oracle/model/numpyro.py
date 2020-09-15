@@ -135,7 +135,7 @@ class Model:
         )
         self.trace = {**mcmc.get_samples(), **mcmc.get_extra_fields()}
         # convert trace data to plain old numpy arrays
-        self.trace = {k: np.array(v) for k,v in self.trace.items()}
+        self.trace = {k: np.array(v) for k, v in self.trace.items()}
         return self.trace
 
     def load_trace(self, facts: pd.DataFrame, trace_file: str):
@@ -212,10 +212,18 @@ class Model:
             )
         else:
             r, u = disruptions(new_facts, self.trace, method_name)
-        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[r.index[bin_missings][:n_bin]]
-        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[u.index[bin_missings][:n_bin]]
-        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[r.index[tri_missings][n_bin:]]
-        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[u.index[tri_missings][n_bin:]]
+        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[
+            r.index[bin_missings][:n_bin]
+        ]
+        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[
+            u.index[bin_missings][:n_bin]
+        ]
+        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[
+            r.index[tri_missings][n_bin:]
+        ]
+        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[
+            u.index[tri_missings][n_bin:]
+        ]
         return new_facts
 
 

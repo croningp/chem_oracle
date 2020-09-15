@@ -128,10 +128,18 @@ class Model:
             )
         else:
             r, u = disruptions(new_facts, self.trace, method_name)
-        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[:n_bin]
-        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[:n_bin]
-        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[n_bin:]
-        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[n_bin:]
+        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[
+            r.index[bin_missings][:n_bin]
+        ]
+        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[
+            u.index[bin_missings][:n_bin]
+        ]
+        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[
+            r.index[tri_missings][n_bin:]
+        ]
+        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[
+            u.index[tri_missings][n_bin:]
+        ]
         return new_facts
 
 

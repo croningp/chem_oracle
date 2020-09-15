@@ -41,7 +41,6 @@ def main(manager: ExperimentManager):
             manager.add_data(full_path, data_type="HPLC")
 
 
-
 if __name__ == "__main__":
     manager = ExperimentManager(sys.argv[-1])
     manager = main(manager)
