@@ -9,10 +9,9 @@ from chem_oracle.experiment import ExperimentManager
 from chem_oracle.monitoring import DataEventHandler
 
 
-def main(xlsx_file: str, **manager_params):
-    xlsx_file = path.abspath(xlsx_file)
+def main(manager: ExperimentManager):
+    xlsx_file = path.abspath(manager.xlsx_file)
     data_dir = path.dirname(xlsx_file)
-    manager = ExperimentManager(xlsx_file, **manager_params)
     # set up logging
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
@@ -41,8 +40,7 @@ def main(xlsx_file: str, **manager_params):
         elif folder.endswith("_HPLC"):
             manager.add_data(full_path, data_type="HPLC")
 
-    return manager
-
 
 if __name__ == "__main__":
-    manager = main(sys.argv[1])
+    mgr = ExperimentManager(sys.argv[-1])
+    mgr = main(mgr)

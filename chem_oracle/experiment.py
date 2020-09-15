@@ -1,25 +1,27 @@
 import glob
 import logging
+import lzma
 import os
+import pickle
 import random
 import threading
 import time
 from datetime import datetime
 from os import path
 from shutil import copyfile
-from typing import List, Iterable
+from typing import Iterable, List
 
 import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
+from chem_oracle.model import numpyro
 from chem_oracle.util import morgan_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
-from nmr_analyze.nn_model import nmr_process, MODELS
+from nmr_analyze.nn_model import MODELS, nmr_process
 
 DEFAULT_MODEL = MODELS["model9.tf"]
 
@@ -124,7 +126,7 @@ def ms_is_reactive_alt(
 ):
     from ms_analyze import ms_dario
 
-    return ms_dario.ms_reactivity(spectrum_dir)
+    return ms_dario.ms_reactivity(spectrum_dir) and 1.0 or 0.0
 
 
 class ExperimentManager:
@@ -137,6 +139,7 @@ class ExperimentManager:
         fingerprint_bits=256,
         seed=None,
         log_level=logging.WARN,
+        backend=numpyro,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -175,9 +178,9 @@ class ExperimentManager:
             self.fingerprints = morgan_matrix(
                 self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
             )
-            self.model = StructuralModel(self.fingerprints, N_props=N_props)
+            self.model = backend.StructuralModel(self.fingerprints, N_props=N_props)
         else:
-            self.model = NonstructuralModel(self.n_compounds, N_props=N_props)
+            self.model = backend.NonstructuralModel(self.n_compounds, N_props=N_props)
 
         # start update loop
         threading.Thread(target=self.update_loop, daemon=True).start()
@@ -216,14 +219,25 @@ class ExperimentManager:
             )
 
     def write_experiments(self, backup=True):
+        timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S")
+        dst_file, ext = path.splitext(self.xlsx_file)
+        dst_file = dst_file + timestamp + ext
         if backup and path.exists(self.xlsx_file):
-            timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-")
-            dst_file, ext = path.splitext(self.xlsx_file)
-            dst_file = dst_file + timestamp + ext
             copyfile(self.xlsx_file, dst_file)
         with pd.ExcelWriter(self.xlsx_file) as writer:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
+        # also save dataframe + trace as pickle
+        pickle_file = dst_file + timestamp + ".pz"
+        with lzma.LZMAFile(pickle_file, "wb") as f:
+            pickle.dump(
+                {
+                    "reagents": self.reagents_df,
+                    "reactions": self.reactions_df,
+                    "trace": self.model.trace,
+                },
+                f,
+            )
 
     def update_loop(self, backup=True, **params):
         while True:
@@ -233,7 +247,7 @@ class ExperimentManager:
                 self.should_update = False
             time.sleep(30)
 
-    def update(self, n_samples=250, chains=16, variational=False, **pymc3_params):
+    def update(self, draws=500, tune=500, **sampler_params):
         """Update expected reactivities using probabilistic model.
         
         Args:
@@ -241,7 +255,7 @@ class ExperimentManager:
         """
         with self.update_lock:
             self.model.sample(
-                self.reactions_df, n_samples, chains, variational, **pymc3_params
+                self.reactions_df, draws=draws, tune=tune, **sampler_params
             )
             self.reactions_df = self.model.condition(self.reactions_df)
 
@@ -277,7 +291,7 @@ class ExperimentManager:
         self.logger.info(f"MS path {data_dir} - detected.")
         time.sleep(1.0)
         self.add_data(data_dir, data_type="MS")
-        self.should_update = True
+        # self.should_update = True
 
     def nmr_callback(self, data_dir: str):
         self.logger.info(f"Proton NMR path {data_dir} - detected.")
@@ -352,39 +366,39 @@ class ExperimentManager:
             rdf.loc[selector, reactivity_column] = reactivity
         self.logger.debug("Update lock released.")
 
-
-def populate(self):
-    """
-        Add entries for missing reactions to reaction dataframe.
-        Existing entries are left intact.
+    def populate(self):
         """
-    all_compounds = self.reagents_df["reagent_number"]
-    n_compounds = len(all_compounds)
-    df = self.reactions_df
-    idx = len(df)
-    for i1, c1 in enumerate(all_compounds):
-        for i2, c2 in enumerate(all_compounds):
-            if i2 <= i1:
-                continue
-            for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
-                # check whether entry already exists
-                if df.query(
-                    "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
-                ).empty:
-                    # add missing entry and increment index
-                    self.reactions_df.loc[idx] = (
-                        None,  # reactor_number
-                        c1,  # compound1
-                        c2,  # compound2
-                        c3,  # compound3
-                        None,  # NMR_reactivity
-                        None,  # MS_reactivity
-                        None,  # HPLC_reactivity
-                        None,  # avg_expected_reactivity
-                        None,  # std_expected_reactivity
-                    )
-                    idx += 1
-    # convert compound numbers back to int (pandas bug)
-    self.reactions_df = df.astype(
-        {"compound1": "int", "compound2": "int", "compound3": "int"}
-    )
+            Add entries for missing reactions to reaction dataframe.
+            Existing entries are left intact.
+            """
+        all_compounds = self.reagents_df["reagent_number"]
+        df = self.reactions_df
+        idx = len(df)
+        for i1, c1 in enumerate(all_compounds):
+            for i2, c2 in enumerate(all_compounds):
+                if i2 <= i1:
+                    continue
+                for c3 in list(all_compounds[max(i1, i2) + 1 :]) + [-1]:
+                    # check whether entry already exists
+                    if df.query(
+                        "compound1 == @c1 and compound2 == @c2 and compound3 == @c3"
+                    ).empty:
+                        # add missing entry and increment index
+                        self.reactions_df.loc[idx] = (
+                            None,  # reactor_number
+                            c1,  # compound1
+                            c2,  # compound2
+                            c3,  # compound3
+                            None,  # NMR_reactivity
+                            None,  # MS_reactivity
+                            None,  # HPLC_reactivity
+                            None,  # avg_expected_reactivity
+                            None,  # std_expected_reactivity
+                            None,  # reactivity_disruption
+                            None,  # uncertainty_disruption
+                        )
+                        idx += 1
+        # convert compound numbers back to int (pandas bug)
+        self.reactions_df = df.astype(
+            {"compound1": "int", "compound2": "int", "compound3": "int"}
+        )
