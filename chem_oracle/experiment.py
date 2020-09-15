@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.probabilistic_model import NonstructuralModel, StructuralModel
+from chem_oracle.model import numpyro, pymc3
 from chem_oracle.util import morgan_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
@@ -138,6 +138,7 @@ class ExperimentManager:
         fingerprint_bits=256,
         seed=None,
         log_level=logging.WARN,
+        backend=numpyro,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -176,9 +177,9 @@ class ExperimentManager:
             self.fingerprints = morgan_matrix(
                 self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
             )
-            self.model = StructuralModel(self.fingerprints, N_props=N_props)
+            self.model = backend.StructuralModel(self.fingerprints, N_props=N_props)
         else:
-            self.model = NonstructuralModel(self.n_compounds, N_props=N_props)
+            self.model = backend.NonstructuralModel(self.n_compounds, N_props=N_props)
 
         # start update loop
         threading.Thread(target=self.update_loop, daemon=True).start()
@@ -244,7 +245,7 @@ class ExperimentManager:
                 self.should_update = False
             time.sleep(30)
 
-    def update(self, n_samples=250, chains=16, variational=False, **pymc3_params):
+    def update(self, draws=500, tune=500, **sampler_params):
         """Update expected reactivities using probabilistic model.
         
         Args:
@@ -252,7 +253,7 @@ class ExperimentManager:
         """
         with self.update_lock:
             self.model.sample(
-                self.reactions_df, n_samples, chains, variational, **pymc3_params
+                self.reactions_df, draws=draws, tune=tune, **sampler_params
             )
             self.reactions_df = self.model.condition(self.reactions_df)
 
@@ -288,7 +289,7 @@ class ExperimentManager:
         self.logger.info(f"MS path {data_dir} - detected.")
         time.sleep(1.0)
         self.add_data(data_dir, data_type="MS")
-        self.should_update = True
+        # self.should_update = True
 
     def nmr_callback(self, data_dir: str):
         self.logger.info(f"Proton NMR path {data_dir} - detected.")
