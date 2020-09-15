@@ -1,5 +1,6 @@
 import glob
 import logging
+import lzma
 import os
 import pickle
 import random
@@ -218,7 +219,7 @@ class ExperimentManager:
             )
 
     def write_experiments(self, backup=True):
-        timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S-")
+        timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S")
         dst_file, ext = path.splitext(self.xlsx_file)
         dst_file = dst_file + timestamp + ext
         if backup and path.exists(self.xlsx_file):
@@ -227,8 +228,8 @@ class ExperimentManager:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
         # also save dataframe + trace as pickle
-        pickle_file = dst_file + timestamp + ".pkl"
-        with open(pickle_file, "wb") as f:
+        pickle_file = dst_file + timestamp + ".pz"
+        with lzma.LZMAFile(pickle_file, "wb") as f:
             pickle.dump(
                 {
                     "reagents": self.reagents_df,

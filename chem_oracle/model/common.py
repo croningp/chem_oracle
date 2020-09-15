@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 
+
 def reactivity_disruption(observations, probabilities):
     pi = np.mean(probabilities, axis=1)
     n_exp = observations.shape[0]
@@ -72,7 +73,9 @@ def differential_disruptions(
     f["uncertainty_disruption"] = np.nan
     # convert trace to dictionary so we can mutate it!
     t = (
-        deepcopy(trace) if isinstance(trace, dict) else {v: trace[v] for v in trace.varnames}
+        deepcopy(trace)
+        if isinstance(trace, dict)
+        else {v: trace[v] for v in trace.varnames}
     )  # latter case applies to PyMC3 traces
     for _ in range(n):
         bin_missings = (f["compound3"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
