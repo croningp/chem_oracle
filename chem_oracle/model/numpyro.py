@@ -174,7 +174,7 @@ class Model:
     def condition(
         self,
         facts: pd.DataFrame,
-        method_name: str = "MS",
+        method_name: str = "NMR",
         differential: bool = True,
         **disruption_params,
     ) -> pd.DataFrame:
