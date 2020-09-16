@@ -1,4 +1,4 @@
-git+http://datalore.chem.gla.ac.uk/DMC/advionwrapper.git
+git+https://gitlab.com/croningroup/personal/hmm/advionwrapper
 jax
 numpyro
 theano
