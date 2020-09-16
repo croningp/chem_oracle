@@ -140,10 +140,11 @@ class ExperimentManager:
         seed=None,
         log_level=logging.WARN,
         backend=numpyro,
+        knowledge_trace=None,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
-        
+
         Args:
             xlsx_file (str): Name of Excel workbook to read current state from.
                 Experiment data files are expected to be in the same folder.
@@ -152,6 +153,8 @@ class ExperimentManager:
             structural_model (bool): If set to `True`, a model representing
                 each compound using a structural fingerprint string is used;
                 otherwise they are treated as black boxes.
+            knowledge_trace (Dict): Sampling trace representing previous knowledge.
+                This can be used in conditioning.
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props
@@ -159,6 +162,7 @@ class ExperimentManager:
         self.reagents_dir = path.join(self.data_dir, "reagents")
         self.update_lock = threading.Lock()
         self.should_update = False
+        self.knowledge_trace = knowledge_trace
 
         # seed RNG for reproducibility
         random.seed(seed)
@@ -249,14 +253,25 @@ class ExperimentManager:
 
     def update(self, draws=500, tune=500, **sampler_params):
         """Update expected reactivities using probabilistic model.
-        
+
         Args:
             n_samples (int): Number of samples in each MCMC chain.
         """
         with self.update_lock:
-            self.model.sample(
-                self.reactions_df, draws=draws, tune=tune, **sampler_params
-            )
+            if self.knowledge_trace:
+                self.logger.debug(f"Using existing knowledge trace.")
+                # produce posterior predictive trace from supplied knowledge
+                self.model.predict(
+                    self.reactions_df,
+                    self.knowledge_trace,
+                    draws=draws,
+                    **sampler_params,
+                )
+            else:
+                # produce trace from de novo sampling
+                self.model.sample(
+                    self.reactions_df, draws=draws, tune=tune, **sampler_params
+                )
             self.reactions_df = self.model.condition(self.reactions_df)
 
     def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:

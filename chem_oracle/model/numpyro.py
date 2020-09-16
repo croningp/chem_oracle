@@ -13,7 +13,7 @@ from jax import ops
 from jax.random import PRNGKey
 from numpyro import deterministic, sample
 from numpyro.infer import MCMC, NUTS
-from numpyro.infer.util import log_likelihood
+from numpyro.infer.util import log_likelihood, Predictive
 from numpyro.util import set_platform
 
 from .common import disruptions, differential_disruptions
@@ -135,6 +135,22 @@ class Model:
         self.trace = {k: np.array(v) for k, v in self.trace.items()}
         return self.trace
 
+    def predict(
+        self,
+        facts: pd.DataFrame,
+        knowledge_trace: Dict,
+        draws=500,
+        model_params=None,
+        **sampler_params,
+    ):
+        # numpyro chokes on non-sampled vars
+        sampled_vars_trace = {k: knowledge_trace[k] for k in SAMPLED_RVS}
+        predictive = Predictive(self._pyro_model, sampled_vars_trace, num_samples=draws)
+        self.trace = predictive(
+            PRNGKey(0), facts, *(model_params or []), **sampler_params
+        )
+        return self.trace
+
     def load_trace(self, facts: pd.DataFrame, trace_file: str):
         with open(trace_file, "rb") as f:
             self.trace = pickle.load(f)
@@ -173,14 +189,16 @@ class Model:
         facts: pd.DataFrame,
         method_name: str = "NMR",
         differential: bool = True,
+        trace=None,
         **disruption_params,
     ) -> pd.DataFrame:
         # calculate reactivity for binary reactions
-        bin_avg = 1 - np.mean(self.trace["bin_doesnt_react"], axis=0)
-        bin_std = np.std(self.trace["bin_doesnt_react"], axis=0)
+        trace = trace or self.trace
+        bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
+        bin_std = np.std(trace["bin_doesnt_react"], axis=0)
         # calculate reactivity for three component reactions
-        tri_avg = 1 - np.mean(self.trace["tri_doesnt_react"], axis=0)
-        tri_std = np.std(self.trace["tri_doesnt_react"], axis=0)
+        tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
+        tri_std = np.std(trace["tri_doesnt_react"], axis=0)
 
         new_facts = facts.copy()
         # remove old disruption values
@@ -205,10 +223,10 @@ class Model:
 
         if differential:
             r, u = differential_disruptions(
-                new_facts, self.trace, method_name, **disruption_params
+                new_facts, trace, method_name, **disruption_params
             )
         else:
-            r, u = disruptions(new_facts, self.trace, method_name)
+            r, u = disruptions(new_facts, trace, method_name)
         new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[
             r.index[bin_missings][:n_bin]
         ]
