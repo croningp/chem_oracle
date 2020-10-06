@@ -3,6 +3,8 @@ import os
 from itertools import permutations
 from typing import Dict
 
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
+
 import jax
 import jax.numpy as jnp
 import numpy as np
