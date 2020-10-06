@@ -8,17 +8,18 @@ os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
 import jax
 import jax.numpy as jnp
 import numpy as np
-import numpyro.distributions as dist
 import pandas as pd
 from jax import ops
 from jax.random import PRNGKey
+
+import numpyro.distributions as dist
 from numpyro import deterministic, sample
 from numpyro.infer import MCMC, NUTS
-from numpyro.infer.util import log_likelihood, Predictive
+from numpyro.infer.util import Predictive, log_likelihood
 from numpyro.util import set_platform
 
-from .common import disruptions, differential_disruptions
 from ..util import indices
+from .common import differential_disruptions, disruptions
 
 # force GPU
 set_platform("gpu")
@@ -268,6 +269,8 @@ class NonstructuralModel(Model):
         bin_HPLC = bin_facts.HPLC_reactivity.values
         bin_missing_NMR = jnp.isnan(bin_NMR).nonzero()[0]
         bin_missing_HPLC = jnp.isnan(bin_HPLC).nonzero()[0]
+        impute_bin_HPLC = impute and bin_missing_HPLC.any()
+        impute_bin_NMR = impute and bin_missing_NMR.any()
 
         tri_facts = facts[facts["compound3"] != -1]
         tri_r1 = tri_facts.compound1.values
@@ -277,15 +280,8 @@ class NonstructuralModel(Model):
         tri_HPLC = tri_facts.HPLC_reactivity.values
         tri_missing_NMR = jnp.isnan(tri_NMR).nonzero()[0]
         tri_missing_HPLC = jnp.isnan(tri_HPLC).nonzero()[0]
-
-        if not (
-            bin_missing_HPLC.any()
-            or bin_missing_NMR.any()
-            or tri_missing_HPLC.any()
-            or tri_missing_NMR.any()
-        ):
-            logging.debug("Nothing to impute, setting impute to False")
-            impute = False
+        impute_tri_HPLC = impute and tri_missing_HPLC.any()
+        impute_tri_NMR = impute and tri_missing_NMR.any()
 
         bi_idx = jnp.array(triangular_indices(self.N_props, 2))
         tri_idx = jnp.array(triangular_indices(self.N_props, 3, shift=N_bin))
@@ -321,39 +317,41 @@ class NonstructuralModel(Model):
             tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
         )
 
-        if impute:
+        if impute_bin_HPLC:
             hplc_impute_binary = sample(
                 "reacts_binary_HPLC_missing",
                 dist.Normal(
                     loc=1 - bin_doesnt_react[bin_missing_HPLC], scale=self.likelihood_sd
                 ).mask(False),
             )
+            bin_HPLC = ops.index_update(bin_HPLC, bin_missing_HPLC, hplc_impute_binary)
 
+        if impute_tri_HPLC:
             hplc_impute_ternary = sample(
                 "reacts_ternary_HPLC_missing",
                 dist.Normal(
                     loc=1 - tri_no_react[tri_missing_HPLC], scale=self.likelihood_sd
                 ).mask(False),
             )
+            tri_HPLC = ops.index_update(tri_HPLC, tri_missing_HPLC, hplc_impute_ternary)
 
+        if impute_bin_NMR:
             nmr_impute_binary = sample(
                 "reacts_binary_NMR_missing",
                 dist.Normal(
                     loc=1 - bin_doesnt_react[bin_missing_NMR], scale=self.likelihood_sd
                 ).mask(False),
             )
+            bin_NMR = ops.index_update(bin_NMR, bin_missing_NMR, nmr_impute_binary)
 
+        if impute_tri_NMR:
             nmr_impute_ternary = sample(
                 "reacts_ternary_NMR_missing",
                 dist.Normal(
                     loc=1 - tri_no_react[tri_missing_NMR], scale=self.likelihood_sd
                 ).mask(False),
             )
-
-            bin_NMR = ops.index_update(bin_NMR, bin_missing_NMR, nmr_impute_binary)
             tri_NMR = ops.index_update(tri_NMR, tri_missing_NMR, nmr_impute_ternary)
-            bin_HPLC = ops.index_update(bin_HPLC, bin_missing_HPLC, hplc_impute_binary)
-            tri_HPLC = ops.index_update(tri_HPLC, tri_missing_HPLC, hplc_impute_ternary)
 
         nmr_obs_binary = sample(
             "reacts_binary_NMR",
@@ -414,8 +412,10 @@ class StructuralModel(Model):
         bin_r2 = bin_facts.compound2.values
         bin_NMR = bin_facts.NMR_reactivity.values
         bin_HPLC = bin_facts.HPLC_reactivity.values
-        bin_missing_NMR = jnp.isnan(bin_NMR).nonzero()[0]
         bin_missing_HPLC = jnp.isnan(bin_HPLC).nonzero()[0]
+        bin_missing_NMR = jnp.isnan(bin_NMR).nonzero()[0]
+        impute_bin_HPLC = impute and bin_missing_HPLC.any()
+        impute_bin_NMR = impute and bin_missing_NMR.any()
 
         tri_facts = facts[facts["compound3"] != -1]
         tri_r1 = tri_facts.compound1.values
@@ -423,17 +423,10 @@ class StructuralModel(Model):
         tri_r3 = tri_facts.compound3.values
         tri_NMR = tri_facts.NMR_reactivity.values
         tri_HPLC = tri_facts.HPLC_reactivity.values
-        tri_missing_NMR = jnp.isnan(tri_NMR).nonzero()[0]
         tri_missing_HPLC = jnp.isnan(tri_HPLC).nonzero()[0]
-
-        if not (
-            bin_missing_HPLC.any()
-            or bin_missing_NMR.any()
-            or tri_missing_HPLC.any()
-            or tri_missing_NMR.any()
-        ):
-            logging.debug("Nothing to impute, setting impute to False")
-            impute = False
+        tri_missing_NMR = jnp.isnan(tri_NMR).nonzero()[0]
+        impute_tri_HPLC = impute and tri_missing_HPLC.any()
+        impute_tri_NMR = impute and tri_missing_NMR.any()
 
         bi_idx = jnp.array(triangular_indices(self.N_props, 2))
         tri_idx = jnp.array(triangular_indices(self.N_props, 3, shift=N_bin))
@@ -486,39 +479,41 @@ class StructuralModel(Model):
             tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor),
         )
 
-        if impute:
+        if impute_bin_HPLC:
             hplc_impute_binary = sample(
                 "reacts_binary_HPLC_missing",
                 dist.Normal(
                     loc=1 - bin_doesnt_react[bin_missing_HPLC], scale=self.likelihood_sd
                 ).mask(False),
             )
+            bin_HPLC = ops.index_update(bin_HPLC, bin_missing_HPLC, hplc_impute_binary)
 
+        if impute_tri_HPLC:
             hplc_impute_ternary = sample(
                 "reacts_ternary_HPLC_missing",
                 dist.Normal(
                     loc=1 - tri_no_react[tri_missing_HPLC], scale=self.likelihood_sd
                 ).mask(False),
             )
+            tri_HPLC = ops.index_update(tri_HPLC, tri_missing_HPLC, hplc_impute_ternary)
 
+        if impute_bin_NMR:
             nmr_impute_binary = sample(
                 "reacts_binary_NMR_missing",
                 dist.Normal(
                     loc=1 - bin_doesnt_react[bin_missing_NMR], scale=self.likelihood_sd
                 ).mask(False),
             )
+            bin_NMR = ops.index_update(bin_NMR, bin_missing_NMR, nmr_impute_binary)
 
+        if impute_tri_NMR:
             nmr_impute_ternary = sample(
                 "reacts_ternary_NMR_missing",
                 dist.Normal(
                     loc=1 - tri_no_react[tri_missing_NMR], scale=self.likelihood_sd
                 ).mask(False),
             )
-
-            bin_NMR = ops.index_update(bin_NMR, bin_missing_NMR, nmr_impute_binary)
             tri_NMR = ops.index_update(tri_NMR, tri_missing_NMR, nmr_impute_ternary)
-            bin_HPLC = ops.index_update(bin_HPLC, bin_missing_HPLC, hplc_impute_binary)
-            tri_HPLC = ops.index_update(tri_HPLC, tri_missing_HPLC, hplc_impute_ternary)
 
         nmr_obs_binary = sample(
             "reacts_binary_NMR",
