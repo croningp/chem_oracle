@@ -141,6 +141,7 @@ class ExperimentManager:
         log_level=logging.WARN,
         backend=numpyro,
         knowledge_trace=None,
+        monitor=True,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -187,7 +188,8 @@ class ExperimentManager:
             self.model = backend.NonstructuralModel(self.n_compounds, N_props=N_props)
 
         # start update loop
-        threading.Thread(target=self.update_loop, daemon=True).start()
+        if monitor:
+            threading.Thread(target=self.update_loop, daemon=True).start()
 
     def read_experiments(self):
         with pd.ExcelFile(self.xlsx_file) as reader:
@@ -222,26 +224,27 @@ class ExperimentManager:
                 },
             )
 
-    def write_experiments(self, backup=True):
+    def write_experiments(self, backup=True, trace=True):
         timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S")
         dst_file, ext = path.splitext(self.xlsx_file)
-        dst_file = dst_file + timestamp + ext
+        backup_file = dst_file + timestamp + ext
         if backup and path.exists(self.xlsx_file):
-            copyfile(self.xlsx_file, dst_file)
+            copyfile(self.xlsx_file, backup_file)
         with pd.ExcelWriter(self.xlsx_file) as writer:
             self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
             self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
         # also save dataframe + trace as pickle
         pickle_file = dst_file + timestamp + ".pz"
-        with lzma.LZMAFile(pickle_file, "wb") as f:
-            pickle.dump(
-                {
-                    "reagents": self.reagents_df,
-                    "reactions": self.reactions_df,
-                    "trace": self.model.trace,
-                },
-                f,
-            )
+        if trace:
+            with lzma.LZMAFile(pickle_file, "wb") as f:
+                pickle.dump(
+                    {
+                        "reagents": self.reagents_df,
+                        "reactions": self.reactions_df,
+                        "trace": self.model.trace,
+                    },
+                    f,
+                )
 
     def update_loop(self, backup=True, **params):
         while True:
