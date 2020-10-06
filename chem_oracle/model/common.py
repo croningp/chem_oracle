@@ -1,6 +1,8 @@
+import logging
+from copy import deepcopy
+
 import numpy as np
 import pandas as pd
-from copy import deepcopy
 
 
 def reactivity_disruption(observations, probabilities):
@@ -44,12 +46,18 @@ def disruptions(facts, trace, method_name: str):
     # binary reactions
     bins = facts[(facts["compound3"] == -1)]
     tris = facts[(facts["compound3"] != -1)]
-    observations = np.hstack(
-        (
-            trace[f"reacts_binary_{method_name}_missing"],
-            trace[f"reacts_ternary_{method_name}_missing"],
+
+    try:
+        bin_impute = trace[f"reacts_binary_{method_name}_missing"]
+        tri_impute = trace[f"reacts_ternary_{method_name}_missing"]
+    except KeyError as e:
+        logging.exception(
+            "Error {e}: No imputed data. Skipping disruption calculation."
         )
-    ).T
+        ret = np.full(facts.shape[0], np.nan, 'float32')
+        return (ret, ret)
+
+    observations = np.hstack((bin_impute, tri_impute)).T
     probabilities = np.hstack(
         (
             1
