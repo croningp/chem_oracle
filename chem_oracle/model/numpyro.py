@@ -1,6 +1,5 @@
 import logging
 import os
-import pickle
 from itertools import permutations
 from typing import Dict
 
@@ -149,11 +148,8 @@ class Model:
         self.trace = predictive(
             PRNGKey(0), facts, *(model_params or []), **sampler_params
         )
+        self.trace = {k: np.array(v) for k, v in self.trace.items()}
         return self.trace
-
-    def load_trace(self, facts: pd.DataFrame, trace_file: str):
-        with open(trace_file, "rb") as f:
-            self.trace = pickle.load(f)
 
     def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
         trace = trace or self.trace
@@ -190,15 +186,26 @@ class Model:
         method_name: str = "NMR",
         differential: bool = True,
         trace=None,
+        predict=True,
         **disruption_params,
     ) -> pd.DataFrame:
+        """
+        predict: Draw from posterior predictive rather than using `trace` directly.
+            This is useful if conditioning is done on a chemical space different than
+            one used during sampling.
+        """
         # calculate reactivity for binary reactions
         trace = trace or self.trace
-        bin_avg = 1 - np.mean(trace["bin_doesnt_react"], axis=0)
-        bin_std = np.std(trace["bin_doesnt_react"], axis=0)
+        if predict:
+            prediction = self.predict(facts, trace)
+        else:
+            prediction = trace
+
+        bin_avg = 1 - np.mean(prediction["bin_doesnt_react"], axis=0)
+        bin_std = np.std(prediction["bin_doesnt_react"], axis=0)
         # calculate reactivity for three component reactions
-        tri_avg = 1 - np.mean(trace["tri_doesnt_react"], axis=0)
-        tri_std = np.std(trace["tri_doesnt_react"], axis=0)
+        tri_avg = 1 - np.mean(prediction["tri_doesnt_react"], axis=0)
+        tri_std = np.std(prediction["tri_doesnt_react"], axis=0)
 
         new_facts = facts.copy()
         # remove old disruption values
@@ -229,22 +236,16 @@ class Model:
 
         if differential:
             r, u = differential_disruptions(
-                new_facts, trace, method_name, **disruption_params
+                new_facts, prediction, method_name, **disruption_params
             )
         else:
-            r, u = disruptions(new_facts, trace, method_name)
-        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[
-            r.index[bin_missings][:n_bin]
-        ]
-        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[
-            u.index[bin_missings][:n_bin]
-        ]
-        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[
-            r.index[tri_missings][n_bin:]
-        ]
-        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[
-            u.index[tri_missings][n_bin:]
-        ]
+            r, u = disruptions(new_facts, prediction, method_name)
+
+        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[bin_missings]
+        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[bin_missings]
+        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[tri_missings]
+        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[tri_missings]
+
         return new_facts
 
 
