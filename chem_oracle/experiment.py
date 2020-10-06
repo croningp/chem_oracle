@@ -221,6 +221,8 @@ class ExperimentManager:
                     "std_expected_reactivity": float,
                     "reactivity_disruption": float,
                     "uncertainty_disruption": float,
+                    "likelihood": float,
+                    "likelihood_sd": float,
                 },
             )
 

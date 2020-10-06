@@ -219,6 +219,12 @@ class Model:
         tri_missings = (new_facts["compound3"] != -1) & pd.isna(
             new_facts[f"{method_name}_reactivity"]
         )
+
+        new_facts["likelihood"] = self.experiment_likelihoods(facts, trace).mean(axis=0)
+        new_facts["likelihood_sd"] = self.experiment_likelihoods(facts, trace).std(
+            axis=0
+        )
+
         n_bin = bin_missings.sum()
 
         if differential:
