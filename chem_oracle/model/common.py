@@ -10,8 +10,13 @@ def reactivity_disruption(observations, probabilities):
     n_exp = observations.shape[0]
     res = np.zeros((n_exp, n_exp))
     for i in range(n_exp):
-        obs_pos = probabilities[:, observations[i, :] > 0.5]
-        obs_neg = probabilities[:, observations[i, :] < 0.5]
+        reacts = observations[i, :] > 0.5
+        if reacts.all() or not reacts.any():
+            # all observations positive/negative, won't cause any disruption
+            res[i, :] = 0.0
+            continue
+        obs_pos = probabilities[:, reacts]
+        obs_neg = probabilities[:, ~reacts]
         mu_ji = np.mean(obs_pos, axis=1)
         mu_ji_bar = np.mean(obs_neg, axis=1)
         for j in range(n_exp):
@@ -29,8 +34,13 @@ def uncertainty_disruption(observations, probabilities):
     n_exp = observations.shape[0]
     res = np.zeros((n_exp, n_exp))
     for i in range(n_exp):
-        obs_pos = probabilities[:, observations[i, :] > 0.5]
-        obs_neg = probabilities[:, observations[i, :] < 0.5]
+        reacts = observations[i, :] > 0.5
+        if reacts.all() or not reacts.any():
+            # all observations positive/negative, won't cause any disruption
+            res[i, :] = 0.0
+            continue
+        obs_pos = probabilities[:, reacts]
+        obs_neg = probabilities[:, ~reacts]
         stdji = np.std(obs_pos, axis=1)
         stdji_bar = np.std(obs_neg, axis=1)
         for j in range(n_exp):
