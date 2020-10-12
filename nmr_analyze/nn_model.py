@@ -20,33 +20,65 @@ if gpus:
         print(e)
 
 
-def process_nmr(nmr_path, min_length=None):
+def process_nmr(nmr_path, length=None, normalize=True):
     r = (
         NMRSpectrum(nmr_path)
         .crop(0, 12, inplace=True)
-        .remove_peak(2.5, rel_height=0.9999, inplace=True, cut=False)
-        .autophase(inplace=True)
+        #.remove_peak(2.5, rel_height=0.9999, inplace=True, cut=False)
+        #.autophase(inplace=True)
         .cut(1.3, 3.65, inplace=True)  # remove DMSO peak region
         .normalize(inplace=True)
     )
-    if min_length is not None and len(r) > min_length:
-        r.spectrum = r.spectrum[:min_length]
-        r.xscale = r.xscale[:min_length]
-        r.length = min_length
+    if normalize:
+        r.normalize(inplace=True)
+    if length is not None:
+        interpolator = interp1d(r.xscale, r.spectrum)
+        r.xscale = np.linspace(r.xscale[0], r.xscale[-1], length)
+        r.spectrum = interpolator(r.xscale)
+        r.length = length
     return r
 
 
-MIN_LENGTH = 3921
-DATA_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data"
+class NMRDataset:
+    def __init__(self, dirs, adjust_length=True, dtype="float32", normalize=True, target_length=None):
+        self.dirs = dirs
+        self.spectra = [process_nmr(d) for d in self.dirs]
+        if adjust_length:
+            self.min_length = target_length or min(len(s) for s in self.spectra)
+            self.spectra = [
+                process_nmr(d, self.min_length, normalize=normalize) for d in self.dirs
+            ]
+        self.matrix = np.vstack(
+            [s.spectrum.real[: self.min_length] for s in self.spectra]
+        ).astype(dtype, casting="same_kind")
+        if normalize:
+            self.matrix / self.matrix.max(axis=1)[:, np.newaxis]
+
+    def __iter__(self):
+        return self.spectra.__iter__()
+
+    def __len__(self):
+        return len(self.spectra)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple):
+            # return from matrix
+            return self.matrix[idx]
+        else:
+            # return from spectra
+            return self.spectra[idx]
+
+TARGET_LENGTH = 3921
+DATA_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2"
 MODEL_HOME = "/home/group/Code/NMRModel"
 
 REAGENT_DIRS = {
     int(path.basename(p).split("_")[1]): p
     for p in glob.glob(path.join(DATA_FOLDER, "reagents", "*_1H"))
 }
-REAGENT_SPECTRA = [
-    process_nmr(REAGENT_DIRS[i], min_length=MIN_LENGTH) for i in sorted(REAGENT_DIRS)
-]
+
+REAGENT_SPECTRA = NMRDataset([REAGENT_DIRS[i] for i in sorted(REAGENT_DIRS)], target_length=TARGET_LENGTH)
+
 MODELS = {
     path.basename(model_path): tf.keras.models.load_model(model_path)
     for model_path in glob.glob(path.join(MODEL_HOME, "*.tf"))
@@ -54,7 +86,7 @@ MODELS = {
 
 
 def nmr_process(folder: str, model: tf.keras.Model) -> bool:
-    rxn_spec = process_nmr(folder, min_length=MIN_LENGTH)
+    rxn_spec = process_nmr(folder, length=TARGET_LENGTH)
     reagents = [p for p in path.basename(folder).split("_")[1].split("-")]
     sms = reduce(add, [REAGENT_SPECTRA[int(i)] for i in reagents]).normalize()
     test_point = np.vstack([sms.spectrum.real, rxn_spec.spectrum.real])
