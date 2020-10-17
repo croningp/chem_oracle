@@ -266,7 +266,7 @@ class ExperimentManager:
             if self.knowledge_trace:
                 self.logger.debug(f"Using existing knowledge trace.")
                 # produce posterior predictive trace from supplied knowledge
-                self.model.predict(
+                self.model.trace = self.model.predict(
                     self.reactions_df,
                     self.knowledge_trace,
                     draws=draws,

@@ -147,11 +147,13 @@ class Model:
         # numpyro chokes on non-sampled vars
         sampled_vars_trace = {k: knowledge_trace[k] for k in SAMPLED_RVS}
         predictive = Predictive(self._pyro_model, sampled_vars_trace, num_samples=draws)
-        self.trace = predictive(
+        prediction = predictive(
             PRNGKey(0), facts, *(model_params or []), **sampler_params
         )
-        self.trace = {k: np.array(v) for k, v in self.trace.items()}
-        return self.trace
+        # convert jax => numpy arrays
+        prediction = {k: np.array(v) for k, v in prediction.items()}
+        prediction.update(sampled_vars_trace)
+        return prediction
 
     def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
         trace = trace or self.trace
@@ -229,8 +231,10 @@ class Model:
             new_facts[f"{method_name}_reactivity"]
         )
 
-        new_facts["likelihood"] = self.experiment_likelihoods(facts, trace).mean(axis=0)
-        new_facts["likelihood_sd"] = self.experiment_likelihoods(facts, trace).std(
+        new_facts["likelihood"] = self.experiment_likelihoods(facts, prediction).mean(
+            axis=0
+        )
+        new_facts["likelihood_sd"] = self.experiment_likelihoods(facts, prediction).std(
             axis=0
         )
 
@@ -240,13 +244,17 @@ class Model:
             r, u = differential_disruptions(
                 new_facts, prediction, method_name, **disruption_params
             )
+            new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[bin_missings]
+            new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[bin_missings]
+            new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[tri_missings]
+            new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[tri_missings]
         else:
             r, u = disruptions(new_facts, prediction, method_name)
+            new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[:n_bin]
+            new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[:n_bin]
+            new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[n_bin:]
+            new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[n_bin:]
 
-        new_facts.loc[bin_missings, ["reactivity_disruption"]] = r[bin_missings]
-        new_facts.loc[bin_missings, ["uncertainty_disruption"]] = u[bin_missings]
-        new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[tri_missings]
-        new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[tri_missings]
 
         return new_facts
 
