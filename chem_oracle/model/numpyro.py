@@ -306,7 +306,7 @@ class NonstructuralModel(Model):
         reactivities_with_zero = jnp.concatenate([jnp.zeros((1,)), reactivities_norm],)
 
         react_matrix = deterministic("react_matrix", reactivities_with_zero[bi_idx],)
-        react_tensor = reactivities_with_zero[tri_idx]
+        react_tensor = deterministic("react_tensor", reactivities_with_zero[tri_idx])
 
         m1, m2 = mem[bin_r1, :][:, :, np.newaxis], mem[bin_r2, :][:, np.newaxis, :]
         M1, M2, M3 = mem[tri_r1, :], mem[tri_r2, :], mem[tri_r3, :]
@@ -450,8 +450,8 @@ class StructuralModel(Model):
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate([jnp.zeros((1,)), reactivities_norm],)
 
-        react_matrix = deterministic("react_matrix", reactivities_with_zero[bi_idx],)
-        react_tensor = reactivities_with_zero[tri_idx]
+        react_matrix = deterministic("react_matrix", reactivities_with_zero[bi_idx])
+        react_tensor = deterministic("react_tensor", reactivities_with_zero[tri_idx])
 
         # Convert fingerprint memberships to molecule memberships
         fp1, fp2 = (
