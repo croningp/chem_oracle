@@ -3,7 +3,10 @@ import os
 from itertools import permutations
 from typing import Dict
 
-os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
+use_cpu = "ORACLE_USECPU" in os.environ
+
+if not use_cpu:
+    os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
 
 import jax
 import jax.numpy as jnp
@@ -21,8 +24,9 @@ from numpyro.util import set_platform
 from ..util import indices
 from .common import differential_disruptions, disruptions
 
-# force GPU
-set_platform("gpu")
+if not use_cpu:
+    # force GPU
+    set_platform("gpu")
 
 if jax.devices()[0].__class__.__name__ != "GpuDevice":
     devs = jax.devices()
