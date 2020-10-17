@@ -28,11 +28,6 @@ if not use_cpu:
     # force GPU
     set_platform("gpu")
 
-if jax.devices()[0].__class__.__name__ != "GpuDevice":
-    devs = jax.devices()
-    xla_flags = os.environ["XLA_FLAGS"]
-    logging.warning(f"Not running on GPU!\nDevices: {devs}\nXLA_FLAGS={xla_flags}")
-
 SAMPLED_RVS = [
     "mem_beta",
     "reactivities_norm",
