@@ -11,13 +11,16 @@ from scipy.sparse.linalg import spsolve
 
 from hplc_analyze import hplc_dario as hplc_processing
 from ms_analyze.ms import MassSpectra
-from nmr_analyze.nn_model import process_nmr, nmr_process
+from nmr_analyze.nn_model import process_nmr, nmr_process, MODELS
+import matplotlib.ticker as ticker
 
-MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
-REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/reagents"
+DEFAULT_MODEL = MODELS["model10.tf"]
+
+MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
+REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
 
 
-name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data.xlsx"))
+name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data3.xlsx"))
 
 ms_lib = {
     0: (56.0, 42.0, 83.0),
@@ -95,6 +98,7 @@ def name_to_nmr(ms_name):
     """
     converts MS path name to NMR
     """
+    # print(ms_name)
     root = ms_name.split("_")[:-1]
     root.append("1H")
     return "_".join(root)
@@ -237,32 +241,31 @@ class ProcessMS:
                 self.hplc_recon,
                 _,
             ) = hplc_processing.filter_spectrum(name_to_hplc(self.s))
-        except NameError:
+        except (NameError, FileNotFoundError) as e:
             print("no HPLC found")
+            self.has_hplc = False
             return
         self.hplc_new_p = find_peaks(
-            self.hplc_diff / max(self.hplc_mix[:, 1]), height=0.05
+            self.hplc_diff / max(self.hplc_recon), height=0.1
         )  # rt of NEW peaks from hplc data
         self.hplc_reactivity = False if len(self.hplc_new_p[0]) == 0 else True
         self.hplc_r_p = find_peaks(
             self.hplc_recon / max(self.hplc_recon), height=0.05
         )  # rt of REAGENT peaks from hplc data
+        self.has_hplc = True
 
     def get_nmr_data(self):
-        """
-        Assigns variables for NMR mix and reconstructed. used only for visualization 
-        """
         self.nmr_mix = process_nmr(name_to_nmr(self.s))
+        self.nmr_yscale = np.real(self.nmr_mix.spectrum)[:1960]
+        self.nmr_xscale = self.nmr_mix.xscale[:1960]
         nmr_reagents = np.array(
             [
-                np.real(
-                    process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum[:3921]
-                )
+                np.real(process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum)[:1960]
                 for reagent in self.reagents
             ]
         )
         self.nmr_recon = np.sum(nmr_reagents, axis=0)
-        self.nmr_reactivity = nmr_process(name_to_nmr(self.s))
+        self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
 
     def remove_known_masses(self):
         """
@@ -308,6 +311,8 @@ class ProcessMS:
         """
         if not hasattr(self, "hplc_r_p"):
             self.get_hplc_data()
+            if not self.has_hplc:
+                return []
         reag_masses = []
         DT = 0.5
         for p in np.take(
@@ -327,16 +332,20 @@ class ProcessMS:
         if not hasattr(self, "TIC_p"):
             self.TIC_p = find_TIC_peaks(self.TIC)
 
-        TIC_p_new = filter_out_peaks(
-            np.take(self.TIC[0], self.TIC_p[0]),
-            np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
-        )  # removing peaks coming when reagents come out
+        if hasattr(self, 'hplc_mix'):
+            TIC_p_new = filter_out_peaks(
+                np.take(self.TIC[0], self.TIC_p[0]),
+                np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
+            )  # removing peaks coming when reagents come out
+        else:
+            TIC_p_new = self.TIC_p[0]
+
         TIC_p_new = [
             i for i in TIC_p_new if 3.6 < i < 23
         ]  # removing stuff with solvent front and column fragments at the end
-        TIC_p_new = remove_naphtalene_contamination(
-            self.spec, TIC_p_new
-        )  # it persists from previous exp
+        #TIC_p_new = remove_naphtalene_contamination(
+        #    self.spec, TIC_p_new
+        #)  # it persists from previous exp
         return TIC_p_new
 
     def update_tic(self):
@@ -372,10 +381,11 @@ class ProcessMS:
         """
         if not hasattr(self, "nmr_reactivity"):
             self.get_nmr_data()
-
+        multiplier = len(self.reagents)
         ax.set_title(str(self.nmr_reactivity))
-        ax.plot(self.nmr_mix.xscale[:3921], self.nmr_recon, c="blue")
-        ax.plot(self.nmr_mix.xscale, np.real(self.nmr_mix.spectrum), c="red")
+        ax.plot(self.nmr_xscale, self.nmr_recon, c="blue")
+        ax.plot(self.nmr_xscale, self.nmr_yscale*multiplier, c="red")
+        ax.set_ylim([-0.1, 0.5])
         ax.invert_xaxis()
 
     def plot_hplc_tic(self, ax):
@@ -390,33 +400,39 @@ class ProcessMS:
         z = baseline_als(self.TIC[1], 100000, 1)  # baseline correction
         TIC_flat = self.TIC[1] - z  # applying the baseline
         TIC_noise = savgol_filter(TIC_flat, 15, 2)
-        ax.set_title(str(self.hplc_reactivity))
-        ax.plot(self.TIC[0], TIC_noise, c="blue", zorder=1)
 
-        ax.plot(
-            self.hplc_mix[:, 0],
-            (self.hplc_mix[:, 1] / max(self.hplc_mix[:, 1])),
-            c="orange",
-        )
-        ax.plot(
-            self.hplc_mix[:, 0], (self.hplc_diff / max(self.hplc_mix[:, 1])), c="red"
-        )
-
+        ax.plot(self.TIC[0], TIC_noise, c="blue", zorder=1, alpha=0.4, label='MS', linestyle='dashed')
         ax.scatter(
-            np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
-            self.hplc_r_p[1]["peak_heights"],
-            zorder=2,
-            c="blue",
-        )
-        ax.scatter(
-            np.take(self.hplc_mix[:, 0], self.hplc_new_p[0]),
-            self.hplc_new_p[1]["peak_heights"],
-            zorder=2,
-            c="red",
-        )
-        ax.scatter(
-            self.TIC_p_filt, [-0.2] * len(self.TIC_p_filt), zorder=2, c="green",
-        )
+                self.TIC_p_filt, [-0.2] * len(self.TIC_p_filt), zorder=2, c="green",alpha=0.4
+            )
+        
+        if self.has_hplc:
+            ax.set_title(str(self.hplc_reactivity))
+            ax.plot(
+                self.hplc_mix[:, 0],
+                (self.hplc_mix[:, 1] / max(self.hplc_recon)),
+                c="orange", label='mix'
+            )
+            ax.plot(
+                self.hplc_mix[:, 0], (self.hplc_diff / max(self.hplc_recon)), c="red", alpha = 0.5, label = 'new'
+            )
+            ax.plot(self.hplc_mix[:,0], self.hplc_recon/ max(self.hplc_recon), c="green", label='reagents')
+            # ax.scatter(
+                # np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
+                # self.hplc_r_p[1]["peak_heights"],
+                # zorder=2,
+                # c="blue",
+            # )
+            
+            ax.scatter(
+                np.take(self.hplc_mix[:, 0], self.hplc_new_p[0]),
+                self.hplc_new_p[1]["peak_heights"],
+                zorder=2,
+                c="red",
+            )
+        ax.legend()
+        tick_spacing = 1
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(tick_spacing))
 
     def calculate_couples(self):
         """
@@ -468,7 +484,7 @@ class ProcessMS:
         self.get_hplc_data()
         self.get_nmr_data()
 
-        self.remove_known_masses()  # remove blank and reagents peaks
+        #self.remove_known_masses()  # remove blank and reagents peaks
         self.update_tic()
 
         self.TIC_p = find_TIC_peaks(self.TIC)
