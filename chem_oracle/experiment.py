@@ -5,6 +5,7 @@ import os
 import pickle
 import random
 import threading
+import sys
 import time
 from datetime import datetime
 from os import path
@@ -190,6 +191,10 @@ class ExperimentManager:
         # start update loop
         if monitor:
             threading.Thread(target=self.update_loop, daemon=True).start()
+
+    def excepthook(self, type, value, traceback):
+        self.logger.exception(f"ERROR {type}")
+        sys.__excepthook__(type, value, traceback)
 
     def read_experiments(self):
         with pd.ExcelFile(self.xlsx_file) as reader:
