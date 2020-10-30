@@ -1,7 +1,6 @@
-import math
 from itertools import combinations, permutations
 from os import path
-from typing import List
+from typing import Iterable, List
 
 import numpy as np
 import pandas as pd
@@ -9,6 +8,7 @@ import pymc3 as pm
 import theano.tensor as tt
 from matplotlib import pyplot as plt
 from rdkit import Chem
+from rdkit.Chem import AllChem, Draw
 
 
 def indices(N: int, ndims: int) -> np.ndarray:
@@ -27,7 +27,6 @@ def indices(N: int, ndims: int) -> np.ndarray:
     Note that any permutation of the indices would correspond to the same linear
     index since the tensor is symmetric. `A[[0, 1, 2]] == A[[1, 2, 0]]` etc.
     """
-    nindices = math.factorial(N) / math.factorial(ndims) / math.factorial(N - ndims)
     v = []
     for comb in combinations(range(N), ndims):
         v.append(" ".join(str(s) for s in comb))
@@ -106,11 +105,25 @@ def morgan_bits(smiles: str, radius: int, nbits: int) -> np.ndarray:
     result = np.zeros(nbits)
     morgan_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
     result[morgan_fp.GetOnBits()] = 1.0
-    return result.tolist()
+    return result
 
 
-def morgan_matrix(mols, radius, nbits):
+def rdkit_bits(smiles: str, minpath: int, maxpath: int, nbits: int) -> np.ndarray:
+    mol = Chem.MolFromSmiles(smiles)
+    result = np.zeros(nbits)
+    rdkit_fp = AllChem.RDKFingerprint(
+        mol, minPath=minpath, maxPath=maxpath, fpSize=nbits, nBitsPerHash=1
+    )
+    result[rdkit_fp.GetOnBits()] = 1.0
+    return result
+
+
+def morgan_matrix(mols: Iterable[str], radius: int, nbits: int):
     return np.stack([morgan_bits(mol, radius, nbits) for mol in mols])
+
+
+def rdkit_matrix(mols: Iterable[str], radius: int, nbits: int):
+    return np.stack([rdkit_bits(mol, 1, radius, nbits) for mol in mols])
 
 
 def split_bin_tri(facts):
@@ -186,20 +199,13 @@ def reaction_components(experiment_dir: str) -> List[int]:
     return [int(s) for s in components.split("-")]
 
 
-try:
-    from rdkit.Chem import AllChem, Draw
-
-    def fingerprint_motifs(mol, radius, nbits):
-        bitset = {}
-        AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits, bitInfo=bitset)
-        return {
-            bit: [
-                Draw.DrawMorganBit(mol, bit, bitset, whichExample=i)
-                for i, _ in enumerate(bitset[bit])
-            ]
-            for bit in bitset
-        }
-
-
-except ImportError:
-    pass
+def fingerprint_motifs(mol, radius, nbits):
+    bitset = {}
+    AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits, bitInfo=bitset)
+    return {
+        bit: [
+            Draw.DrawMorganBit(mol, bit, bitset, whichExample=i)
+            for i, _ in enumerate(bitset[bit])
+        ]
+        for bit in bitset
+    }
