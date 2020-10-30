@@ -9,16 +9,18 @@ from chem_oracle.experiment import ExperimentManager
 from chem_oracle.monitoring import DataEventHandler
 
 
-def main(manager: ExperimentManager):
+def main(manager: ExperimentManager, setup_logging=True):
+    sys.excepthook = manager.excepthook
     xlsx_file = path.abspath(manager.xlsx_file)
     data_dir = path.dirname(xlsx_file)
-    # set up logging
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    logger = logging.getLogger("chem_oracle")
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    logging.getLogger("experiment-manager").addHandler(handler)
+
+    if setup_logging:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.DEBUG)
+        logger = logging.getLogger("chem_oracle")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+        logging.getLogger("experiment-manager").addHandler(handler)
 
     # set up file system monitors
     nmr_handler = DataEventHandler(manager.nmr_callback, patterns=["*_1H"])
