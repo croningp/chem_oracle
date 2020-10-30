@@ -372,11 +372,12 @@ class ExperimentManager:
             )
             try:
                 if data_type == "MS":
-                    component_dirs = [
-                        self.data_folder(component, data_type="MS")
-                        for component in components
-                    ]
-                    reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
+                    # component_dirs = [
+                    #     self.data_folder(component, data_type="MS")
+                    #     for component in components
+                    # ]
+                    # reactivity = ms_is_reactive_alt(data_dir, component_dirs, **params)
+                    return
                 elif data_type == "HPLC":
                     reactivity = hplc_process(data_dir)
                 elif data_type == "NMR":
