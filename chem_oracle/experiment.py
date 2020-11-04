@@ -24,7 +24,7 @@ from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
 from nmr_analyze.nn_model import MODELS, nmr_process
 
-DEFAULT_MODEL = MODELS["model11.tf"]
+DEFAULT_MODEL = MODELS["model12.tf"]
 
 
 def match(
