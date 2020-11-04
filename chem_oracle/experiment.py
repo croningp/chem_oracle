@@ -16,8 +16,8 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.model import numpyro
-from chem_oracle.util import morgan_matrix
+from chem_oracle.model import numpyro, pymc3
+from chem_oracle.util import morgan_matrix, rdkit_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
@@ -136,13 +136,16 @@ class ExperimentManager:
         xlsx_file: str,
         N_props=8,
         structural_model=True,
-        fingerprint_radius=1,
-        fingerprint_bits=256,
+        fingerprints="morgan",
+        fingerprint_radius=2,
+        fingerprint_bits=512,
         seed=None,
         log_level=logging.WARN,
         backend=numpyro,
         knowledge_trace=None,
         monitor=True,
+        override=False,
+        model_params={},
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -165,6 +168,7 @@ class ExperimentManager:
         self.update_lock = threading.Lock()
         self.should_update = False
         self.knowledge_trace = knowledge_trace
+        self.override = override
 
         # seed RNG for reproducibility
         random.seed(seed)
@@ -181,12 +185,22 @@ class ExperimentManager:
             # calculate fingerprints
             self.mols = list(self.reagents_df["SMILES"])
             # TODO: expose this as a parameter
-            self.fingerprints = morgan_matrix(
-                self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
+            if fingerprints == "morgan":
+                self.fingerprints = morgan_matrix(
+                    self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
+                )
+            elif fingerprints == "rdkit":
+                self.fingerprints = rdkit_matrix(
+                    self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
+                )
+
+            self.model = backend.StructuralModel(
+                self.fingerprints, **{"N_props": N_props, **model_params}
             )
-            self.model = backend.StructuralModel(self.fingerprints, N_props=N_props)
         else:
-            self.model = backend.NonstructuralModel(self.n_compounds, N_props=N_props)
+            self.model = backend.NonstructuralModel(
+                self.n_compounds, **{"N_props": N_props, **model_params}
+            )
 
         # start update loop
         if monitor:
@@ -220,8 +234,8 @@ class ExperimentManager:
                     "compound2": int,
                     "compound3": int,
                     "NMR_reactivity": float,
-                    "MS reactivity": float,
-                    "HPLC reactivity": float,
+                    "MS_reactivity": float,
+                    "HPLC_reactivity": float,
                     "avg_expected_reactivity": float,
                     "std_expected_reactivity": float,
                     "reactivity_disruption": float,
@@ -337,7 +351,7 @@ class ExperimentManager:
         else:
             raise ValueError(f"Reaction {c} not found in dataframe.")
 
-    def add_data(self, data_dir: str, data_type: str, override: bool = False, **params):
+    def add_data(self, data_dir: str, data_type: str, **params):
         if "BLANK" in data_dir:
             return
         reaction_number = util.reaction_number(data_dir)
@@ -346,7 +360,7 @@ class ExperimentManager:
 
         # skip if reactivity data already exists
         if (
-            not override
+            not self.override
             and (
                 self.reactions_df[reactivity_column].notna()
                 & self.find_reaction(components)
