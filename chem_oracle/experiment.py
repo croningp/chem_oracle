@@ -146,6 +146,7 @@ class ExperimentManager:
         monitor=True,
         override=False,
         model_params={},
+        data_dir=None,
     ):
         """
         Initialize ExperimentManager with given Excel workbook.
@@ -163,7 +164,7 @@ class ExperimentManager:
         """
         self.xlsx_file = xlsx_file
         self.N_props = N_props
-        self.data_dir = path.dirname(self.xlsx_file)
+        self.data_dir = data_dir or path.dirname(self.xlsx_file)
         self.reagents_dir = path.join(self.data_dir, "reagents")
         self.update_lock = threading.Lock()
         self.should_update = False
