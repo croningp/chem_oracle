@@ -5,6 +5,8 @@ from os import path
 
 import numpy as np
 import tensorflow as tf
+from scipy.interpolate import interp1d
+
 from nmr_analyze.nmr_analysis import NMRSpectrum
 
 gpus = tf.config.experimental.list_physical_devices("GPU")
@@ -24,9 +26,9 @@ def process_nmr(nmr_path, length=None, normalize=True):
     r = (
         NMRSpectrum(nmr_path)
         .crop(0, 12, inplace=True)
-        #.remove_peak(2.5, rel_height=0.9999, inplace=True, cut=False)
-        #.autophase(inplace=True)
-        .cut(1.3, 3.65, inplace=True)  # remove DMSO peak region
+        # .remove_peak(2.5, rel_height=0.9999, inplace=True, cut=False)
+        # .autophase(inplace=True)
+        #.cut(2.0, 3.0, inplace=True)  # remove DMSO peak region
         .normalize(inplace=True)
     )
     if normalize:
@@ -40,7 +42,14 @@ def process_nmr(nmr_path, length=None, normalize=True):
 
 
 class NMRDataset:
-    def __init__(self, dirs, adjust_length=True, dtype="float32", normalize=True, target_length=None):
+    def __init__(
+        self,
+        dirs,
+        adjust_length=True,
+        dtype="float32",
+        normalize=True,
+        target_length=None,
+    ):
         self.dirs = dirs
         self.spectra = [process_nmr(d) for d in self.dirs]
         if adjust_length:
@@ -68,6 +77,7 @@ class NMRDataset:
             # return from spectra
             return self.spectra[idx]
 
+
 TARGET_LENGTH = 3921
 DATA_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2"
 MODEL_HOME = "/home/group/Code/NMRModel"
@@ -77,7 +87,9 @@ REAGENT_DIRS = {
     for p in glob.glob(path.join(DATA_FOLDER, "reagents", "*_1H"))
 }
 
-REAGENT_SPECTRA = NMRDataset([REAGENT_DIRS[i] for i in sorted(REAGENT_DIRS)], target_length=TARGET_LENGTH)
+REAGENT_SPECTRA = NMRDataset(
+    [REAGENT_DIRS[i] for i in sorted(REAGENT_DIRS)], target_length=TARGET_LENGTH
+)
 
 MODELS = {
     path.basename(model_path): tf.keras.models.load_model(model_path)
