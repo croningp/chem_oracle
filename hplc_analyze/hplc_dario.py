@@ -1,4 +1,5 @@
 import glob
+import logging
 import os
 from os import path
 
@@ -9,7 +10,7 @@ from scipy.signal import find_peaks
 
 from hplc_analyze import chemstation
 
-full_lib = {
+full_lib_old = {
     0: [(13.6, 12.0)],
     1: [(3.0, 2.0)],
     2: [(4.0, 2.7)],
@@ -32,8 +33,35 @@ full_lib = {
     19: [(3.5, 2.0)],
 }
 
-MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
-REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/reagents"
+full_lib = {
+    0: [(18.7, 18.1)],
+    1: [(12.0, 11.4)],
+    2: [(3.0, 2.0)],
+    3: [(13.6, 12.7), (5.5, 4.2), (10.2, 9.8)],
+    4: [(4.2, 2.5)],
+    5: [(15.2, 14.0), (10.8, 10.0), (8.5, 7.7), (5.0, 2.5)],
+    6: [(5.4, 4.0)],
+    7: [(17.3, 17.0), (16.2, 15.5), (14.4, 14.0)],
+    8: [(16.0, 15.5), (3.2, 2.7)],
+    9: [(14.5, 14.1), (12.4, 11.0), (3.7, 3.0)],
+    10: [(5.4, 3.9)],
+    11: [(17.2, 16.2)],
+    12: [(21.7, 21.3)],
+    13: [(18.7, 18.4)],
+    14: [(3.0, 2.0)],
+    15: [(11.8, 10.45)],
+    16: [(10.3, 9.4), (7.8, 6.0), (5.5, 3.2)],
+    17: [(3.5, 2.5)],
+    18: [(3.5, 2.5)],
+    19: [(17.9, 17.4), (3.6, 2.4)],
+    20: [(15.3, 14.2)],
+    21: [(15.0, 14.3)],
+    22: [(4.0, 3.0), (8.5,7.5)],
+    23: [(3.5, 2.5)],
+}
+
+
+REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
 
 reagents = [
     i for i in glob.glob(os.path.join(REAGENTS_FOLDER, "*_HPLC")) if "BLANK" not in i
@@ -52,11 +80,7 @@ def get_reagent_file(n):
 
 
 def get_reagents(file):
-    reagents = [
-        x
-        for x in path.basename(file).split("_")[1].split("-")
-        if x not in ["1", "5", "16"]
-    ]  #
+    reagents = path.basename(file).split("_")[1].split("-")  #
     return reagents
 
 
@@ -74,7 +98,7 @@ def get_spectrum(experiment_dir: str, channel: str = "A"):
         data = np.load(npz_file)
         return np.array([data["times"], data["values"]]).T
     else:
-        print("Not found {}".format(npz_file))
+        logging.debug("Not found {}".format(npz_file))
         ch_file = filename + ".ch"
         data = chemstation.CHFile(ch_file)
         np.savez_compressed(npz_file, times=data.times, values=data.values)
@@ -231,8 +255,8 @@ def filter_spectrum(file):
 
 def hplc_process(file):
     original, diff, recon, filt = filter_spectrum(file)
-    new_peaks = find_peaks(diff / max(original[:, 1]), height=0.1)
-    return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 100 else 1.0
+    new_peaks = find_peaks(diff / max(recon), height=0.4)
+    return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 15 else 1.0
 
 
 def filter_and_plot(file):
