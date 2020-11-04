@@ -14,7 +14,7 @@ from ms_analyze.ms import MassSpectra
 from nmr_analyze.nn_model import process_nmr, nmr_process, MODELS
 import matplotlib.ticker as ticker
 
-DEFAULT_MODEL = MODELS["model10.tf"]
+DEFAULT_MODEL = MODELS["model12.tf"]
 
 MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
@@ -98,7 +98,6 @@ def name_to_nmr(ms_name):
     """
     converts MS path name to NMR
     """
-    # print(ms_name)
     root = ms_name.split("_")[:-1]
     root.append("1H")
     return "_".join(root)
@@ -256,16 +255,16 @@ class ProcessMS:
 
     def get_nmr_data(self):
         self.nmr_mix = process_nmr(name_to_nmr(self.s))
-        self.nmr_yscale = np.real(self.nmr_mix.spectrum)[:1960]
-        self.nmr_xscale = self.nmr_mix.xscale[:1960]
+        self.nmr_yscale = np.real(self.nmr_mix.spectrum)[:2430]
+        self.nmr_xscale = self.nmr_mix.xscale[:2430]
         nmr_reagents = np.array(
             [
-                np.real(process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum)[:1960]
+                np.real(process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum)[:2430]
                 for reagent in self.reagents
             ]
         )
         self.nmr_recon = np.sum(nmr_reagents, axis=0)
-        self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
+        #self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
 
     def remove_known_masses(self):
         """
@@ -382,7 +381,7 @@ class ProcessMS:
         if not hasattr(self, "nmr_reactivity"):
             self.get_nmr_data()
         multiplier = len(self.reagents)
-        ax.set_title(str(self.nmr_reactivity))
+        #ax.set_title(str(self.nmr_reactivity))
         ax.plot(self.nmr_xscale, self.nmr_recon, c="blue")
         ax.plot(self.nmr_xscale, self.nmr_yscale*multiplier, c="red")
         ax.set_ylim([-0.1, 0.5])
