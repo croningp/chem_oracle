@@ -1,4 +1,3 @@
-import logging
 from copy import deepcopy
 
 import numpy as np
@@ -57,15 +56,14 @@ def disruptions(facts, trace, method_name: str):
     bins = facts[(facts["compound3"] == -1)]
     tris = facts[(facts["compound3"] != -1)]
 
-    try:
-        bin_impute = trace[f"reacts_binary_{method_name}_missing"]
-        tri_impute = trace[f"reacts_ternary_{method_name}_missing"]
-    except KeyError as e:
-        logging.exception(
-            "Error {e}: No imputed data. Skipping disruption calculation."
-        )
-        ret = np.full(facts.shape[0], np.nan, 'float32')
-        return (ret, ret)
+    bin_impute = trace.get(
+        f"reacts_binary_{method_name}_missing",
+        np.zeros((trace["bin_doesnt_react"].shape[0], 0), dtype="float32"),
+    )
+    tri_impute = trace.get(
+        f"reacts_ternary_{method_name}_missing",
+        np.zeros((trace["tri_doesnt_react"].shape[0], 0), dtype="float32"),
+    )
 
     observations = np.hstack((bin_impute, tri_impute)).T
     probabilities = np.hstack(
