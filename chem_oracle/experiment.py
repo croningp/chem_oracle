@@ -267,15 +267,15 @@ class ExperimentManager:
                     f,
                 )
 
-    def update_loop(self, backup=True, **params):
+    def update_loop(self, backup=True):
         while True:
             if self.should_update:
-                self.update(**params)
+                self.update(condition_kwargs={"differential": False})
                 self.write_experiments(backup)
                 self.should_update = False
             time.sleep(30)
 
-    def update(self, draws=500, tune=500, **sampler_params):
+    def update(self, draws=500, tune=500, sample_kwargs={}, condition_kwargs={}):
         """Update expected reactivities using probabilistic model.
 
         Args:
@@ -289,14 +289,16 @@ class ExperimentManager:
                     self.reactions_df,
                     self.knowledge_trace,
                     draws=draws,
-                    **sampler_params,
+                    **sample_kwargs,
                 )
             else:
                 # produce trace from de novo sampling
                 self.model.sample(
-                    self.reactions_df, draws=draws, tune=tune, **sampler_params
+                    self.reactions_df, draws=draws, tune=tune, **sample_kwargs
                 )
-            self.reactions_df = self.model.condition(self.reactions_df)
+            self.reactions_df = self.model.condition(
+                self.reactions_df, **condition_kwargs
+            )
 
     def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:
         """
