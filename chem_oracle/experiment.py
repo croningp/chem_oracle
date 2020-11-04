@@ -245,15 +245,16 @@ class ExperimentManager:
                 },
             )
 
-    def write_experiments(self, backup=True, trace=True):
+    def write_experiments(self, dataframe=True, backup=True, trace=True):
         timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S")
         dst_file, ext = path.splitext(self.xlsx_file)
         backup_file = dst_file + timestamp + ext
-        if backup and path.exists(self.xlsx_file):
-            copyfile(self.xlsx_file, backup_file)
-        with pd.ExcelWriter(self.xlsx_file) as writer:
-            self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
-            self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
+        if dataframe:
+            if backup and path.exists(self.xlsx_file):
+                copyfile(self.xlsx_file, backup_file)
+            with pd.ExcelWriter(self.xlsx_file) as writer:
+                self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
+                self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
         # also save dataframe + trace as pickle
         pickle_file = dst_file + timestamp + ".pz"
         if trace:
