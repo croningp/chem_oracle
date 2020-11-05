@@ -274,8 +274,8 @@ class NonstructuralModel(Model):
         bin_r2 = bin_facts.compound2.values
         bin_NMR = bin_facts.NMR_reactivity.values
         bin_HPLC = bin_facts.HPLC_reactivity.values
-        bin_missing_NMR = jnp.isnan(bin_NMR).nonzero()[0]
-        bin_missing_HPLC = jnp.isnan(bin_HPLC).nonzero()[0]
+        bin_missing_NMR = np.isnan(bin_NMR).nonzero()[0]
+        bin_missing_HPLC = np.isnan(bin_HPLC).nonzero()[0]
         impute_bin_HPLC = impute and bin_missing_HPLC.any()
         impute_bin_NMR = impute and bin_missing_NMR.any()
 
@@ -285,8 +285,8 @@ class NonstructuralModel(Model):
         tri_r3 = tri_facts.compound3.values
         tri_NMR = tri_facts.NMR_reactivity.values
         tri_HPLC = tri_facts.HPLC_reactivity.values
-        tri_missing_NMR = jnp.isnan(tri_NMR).nonzero()[0]
-        tri_missing_HPLC = jnp.isnan(tri_HPLC).nonzero()[0]
+        tri_missing_NMR = np.isnan(tri_NMR).nonzero()[0]
+        tri_missing_HPLC = np.isnan(tri_HPLC).nonzero()[0]
         impute_tri_HPLC = impute and tri_missing_HPLC.any()
         impute_tri_NMR = impute and tri_missing_NMR.any()
 
