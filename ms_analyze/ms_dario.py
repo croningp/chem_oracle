@@ -14,7 +14,7 @@ from ms_analyze.ms import MassSpectra
 from nmr_analyze.nn_model import process_nmr, nmr_process, MODELS
 import matplotlib.ticker as ticker
 
-DEFAULT_MODEL = MODELS["model12.tf"]
+DEFAULT_MODEL = MODELS["model14.tf"]
 
 MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
@@ -264,7 +264,7 @@ class ProcessMS:
             ]
         )
         self.nmr_recon = np.sum(nmr_reagents, axis=0)
-        #self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
+        self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
 
     def remove_known_masses(self):
         """
@@ -381,7 +381,7 @@ class ProcessMS:
         if not hasattr(self, "nmr_reactivity"):
             self.get_nmr_data()
         multiplier = len(self.reagents)
-        #ax.set_title(str(self.nmr_reactivity))
+        ax.set_title(str(self.nmr_reactivity))
         ax.plot(self.nmr_xscale, self.nmr_recon, c="blue")
         ax.plot(self.nmr_xscale, self.nmr_yscale*multiplier, c="red")
         ax.set_ylim([-0.1, 0.5])
