@@ -272,7 +272,7 @@ class ExperimentManager:
     def update_loop(self, backup=True):
         while True:
             if self.should_update:
-                self.update(condition_kwargs={"differential": False})
+                self.update(condition_kwargs={"differential": True})
                 self.write_experiments(backup)
                 self.should_update = False
             time.sleep(30)
