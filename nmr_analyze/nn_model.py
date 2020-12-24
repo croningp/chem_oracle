@@ -5,9 +5,10 @@ from os import path
 
 import numpy as np
 import tensorflow as tf
-from scipy.interpolate import interp1d
 
-from nmr_analyze.nmr_analysis import NMRSpectrum
+from nmr_analyze.nmr_analysis import NMRDataset, NMRSpectrum
+
+DEFAULT_XFORM = lambda s: s.crop(0, 12, inplace=True).normalize(inplace=True)
 
 gpus = tf.config.experimental.list_physical_devices("GPU")
 if gpus:
@@ -22,65 +23,24 @@ if gpus:
         print(e)
 
 
-def process_nmr(nmr_path, length=None, normalize=True):
+def process_nmr(nmr: NMRSpectrum, length=None, normalize=True):
     r = (
-        NMRSpectrum(nmr_path)
-        .crop(0, 12, inplace=True)
+        nmr.copy().crop(0, 12, inplace=True)
         # .remove_peak(2.5, rel_height=0.9999, inplace=True, cut=False)
         # .autophase(inplace=True)
-        #.cut(2.0, 3.0, inplace=True)  # remove DMSO peak region
+        # .cut(2.0, 3.0, inplace=True)  # remove DMSO peak region
         .normalize(inplace=True)
     )
     if normalize:
         r.normalize(inplace=True)
     if length is not None:
-        interpolator = interp1d(r.xscale, r.spectrum)
-        r.xscale = np.linspace(r.xscale[0], r.xscale[-1], length)
-        r.spectrum = interpolator(r.xscale)
-        r.length = length
+        r.resize(length, inplace=True)
     return r
 
 
-class NMRDataset:
-    def __init__(
-        self,
-        dirs,
-        adjust_length=True,
-        dtype="float32",
-        normalize=True,
-        target_length=None,
-    ):
-        self.dirs = dirs
-        self.spectra = [process_nmr(d) for d in self.dirs]
-        if adjust_length:
-            self.min_length = target_length or min(len(s) for s in self.spectra)
-            self.spectra = [
-                process_nmr(d, self.min_length, normalize=normalize) for d in self.dirs
-            ]
-        self.matrix = np.vstack(
-            [s.spectrum.real[: self.min_length] for s in self.spectra]
-        ).astype(dtype, casting="same_kind")
-        if normalize:
-            self.matrix / self.matrix.max(axis=1)[:, np.newaxis]
-
-    def __iter__(self):
-        return self.spectra.__iter__()
-
-    def __len__(self):
-        return len(self.spectra)
-
-    def __getitem__(self, idx):
-        if isinstance(idx, tuple):
-            # return from matrix
-            return self.matrix[idx]
-        else:
-            # return from spectra
-            return self.spectra[idx]
-
-
-TARGET_LENGTH = 3921
+TARGET_LENGTH = 2438
 DATA_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2"
-MODEL_HOME = "/home/group/Code/NMRModel"
+MODEL_HOME = "/mnt/orkney1/NMRModel"
 
 REAGENT_DIRS = {
     int(path.basename(p).split("_")[1]): p
@@ -102,7 +62,7 @@ def test_point(*spectra: NMRSpectrum):
 
 
 def nmr_process(folder: str, model: tf.keras.Model) -> bool:
-    rxn_spec = process_nmr(folder, length=TARGET_LENGTH)
+    rxn_spec = process_nmr(NMRSpectrum(folder), length=TARGET_LENGTH)
     reagents = [p for p in path.basename(folder).split("_")[1].split("-")]
     sms = reduce(add, [REAGENT_SPECTRA[int(i)] for i in reagents]).normalize()
     prediction = model.predict(test_point(rxn_spec, sms))[0, 0]

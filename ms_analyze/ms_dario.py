@@ -11,10 +11,11 @@ from scipy.sparse.linalg import spsolve
 
 from hplc_analyze import hplc_dario as hplc_processing
 from ms_analyze.ms import MassSpectra
+from nmr_analyze.nmr_analysis import NMRSpectrum
 from nmr_analyze.nn_model import process_nmr, nmr_process, MODELS
 import matplotlib.ticker as ticker
 
-DEFAULT_MODEL = MODELS["model14.tf"]
+DEFAULT_MODEL = MODELS["model19-11-13.tf"]
 
 MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
 REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"

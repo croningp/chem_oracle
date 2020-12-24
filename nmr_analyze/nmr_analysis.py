@@ -1,25 +1,17 @@
-from __future__ import annotations
-
-import glob
 import logging
 import struct
-from functools import reduce
-from operator import add
-from os import path
-from os.path import join, basename
-from typing import Union, Tuple
+from os.path import join
+from typing import Callable, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-from scipy import signal
-from scipy.optimize import fmin, curve_fit
+from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit, fmin
 
 
-def fft(fid_complex):
-    spectrum = np.fft.fft(fid_complex, n=1 * len(fid_complex))
-    spectrum = np.fft.fftshift(spectrum)
-    spectrum_length = len(spectrum)
+def DEFAULT_XFORM(s):
+    return s.crop(0, 12).normalize()
 
 
 def lorentzian(p, p0, ampl, w):
@@ -107,7 +99,9 @@ class NMRSpectrum:
         sw_ppm = sw_hz / b1_freq
         highest_frequency_ppm = lowest_frequency_ppm + sw_ppm
         return np.linspace(
-            start=lowest_frequency_ppm, stop=highest_frequency_ppm, num=len(self),
+            start=lowest_frequency_ppm,
+            stop=highest_frequency_ppm,
+            num=len(self),
         )
 
     def crop(self, low_ppm: float, high_ppm: float, inplace=False):
@@ -122,6 +116,13 @@ class NMRSpectrum:
         selector = (s.xscale < low_ppm) | (s.xscale > high_ppm)
         s.xscale = s.xscale[selector]
         s.spectrum = s.spectrum[selector]
+        return s
+
+    def erase(self, low_ppm: float, high_ppm: float, inplace=False):
+        s = self if inplace else self.copy()
+        selector = (s.xscale > low_ppm) & (s.xscale < high_ppm)
+        p1, p2 = s.spectrum[selector][0], s.spectrum[selector][-1]
+        s.spectrum[selector] = p1 + np.linspace(0, p2 - p1, sum(selector))
         return s
 
     def autophase(self, inplace=False):
@@ -188,6 +189,34 @@ class NMRSpectrum:
         s.spectrum /= self.spectrum.real.max()
         return s
 
+    def resize(self, length, inplace=False):
+        s = self if inplace else self.copy()
+        interpolator = interp1d(s.xscale, s.spectrum)
+        s.xscale = np.linspace(s.xscale[0], s.xscale[-1], length)
+        s.spectrum = interpolator(s.xscale)
+        s.length = length
+        return s
+
+    def shift(
+        self,
+        delta: int,
+        inplace=False,
+        circular=False,
+        fill_value: Union[float, np.ndarray] = 0.0,
+    ) -> NMRSpectrum:
+        s = self if inplace else self.copy()
+        if delta == 0:
+            return self
+        if circular:
+            np.roll(s.spectrum, delta)
+        elif delta > 0:
+            s.spectrum[delta:] = s.spectrum[:-delta]
+            s.spectrum[:delta] = fill_value
+        else:
+            s.spectrum[:delta] = s.spectrum[-delta:]
+            s.spectrum[delta:] = fill_value
+        return s
+
     def copy(self):
         return self.__copy__()
 
@@ -226,3 +255,38 @@ class NMRSpectrum:
 
     def __setitem__(self, item, value):
         self.spectrum[item] = value
+
+
+class NMRDataset:
+    def __init__(
+        self,
+        dirs,
+        adjust_length=True,
+        dtype="float32",
+        target_length=None,
+        transform: Callable[[NMRSpectrum], NMRSpectrum] = DEFAULT_XFORM,
+    ):
+        self.dirs = dirs
+        self.spectra = [transform(NMRSpectrum(d)) for d in self.dirs]
+        if adjust_length:
+            self.min_length = target_length or min(len(s) for s in self.spectra)
+            self.spectra = [
+                s.resize(self.min_length, inplace=True) for s in self.spectra
+            ]
+        self.matrix = np.vstack(
+            [s.spectrum.real[: self.min_length] for s in self.spectra]
+        ).astype(dtype, casting="same_kind")
+
+    def __iter__(self):
+        return self.spectra.__iter__()
+
+    def __len__(self):
+        return len(self.spectra)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple):
+            # return from matrix
+            return self.matrix[idx]
+        else:
+            # return from spectra
+            return self.spectra[idx]
