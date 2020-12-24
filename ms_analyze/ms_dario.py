@@ -172,7 +172,8 @@ def extract_peaks(spec, start, end, height=0.1):
     integral = spec.integrate(start, end)
     peaks = integral.intensities / max(integral.intensities)  # y axis of the spectrum
     masses = integral.masses  # x axis of the spectrum
-    found = find_peaks(peaks, height=height)  # position of the peaks and intensity
+    # position of the peaks and intensity
+    found = find_peaks(peaks, height=height)
     peaks_mass = np.take(masses, found[0])  # masses of the peaks
     return peaks_mass, peaks, found, masses
 
@@ -254,18 +255,25 @@ class ProcessMS:
         )  # rt of REAGENT peaks from hplc data
         self.has_hplc = True
 
-    def get_nmr_data(self):
-        self.nmr_mix = process_nmr(name_to_nmr(self.s))
+    def get_nmr_data(self, nmr_react):
+        self.nmr_mix = process_nmr(NMRSpectrum(name_to_nmr(self.s)))
         self.nmr_yscale = np.real(self.nmr_mix.spectrum)[:2430]
         self.nmr_xscale = self.nmr_mix.xscale[:2430]
         nmr_reagents = np.array(
             [
-                np.real(process_nmr(name_to_nmr(get_reagent_file(reagent))).spectrum)[:2430]
+                np.real(
+                    process_nmr(
+                        NMRSpectrum(name_to_nmr(get_reagent_file(reagent)))
+                    ).spectrum
+                )[:2430]
                 for reagent in self.reagents
             ]
         )
         self.nmr_recon = np.sum(nmr_reagents, axis=0)
-        self.nmr_reactivity = nmr_process(folder=name_to_nmr(self.s), model=DEFAULT_MODEL)
+        if nmr_react:
+            self.nmr_reactivity = nmr_process(
+                folder=name_to_nmr(self.s), model=DEFAULT_MODEL
+            )
 
     def remove_known_masses(self):
         """
@@ -278,7 +286,8 @@ class ProcessMS:
         all_masses = blank_masses + reag_lib_masses + reag_masses
         all_masses = set(all_masses)
         for p in all_masses:
-            self.spec.remove_peak(p, delta_mass=1.0)  # removing them from chromatogram
+            # removing them from chromatogram
+            self.spec.remove_peak(p, delta_mass=1.0)
 
     def find_reagents_lib_masses(self):
         """
@@ -332,7 +341,7 @@ class ProcessMS:
         if not hasattr(self, "TIC_p"):
             self.TIC_p = find_TIC_peaks(self.TIC)
 
-        if hasattr(self, 'hplc_mix'):
+        if hasattr(self, "hplc_mix"):
             TIC_p_new = filter_out_peaks(
                 np.take(self.TIC[0], self.TIC_p[0]),
                 np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
@@ -343,9 +352,9 @@ class ProcessMS:
         TIC_p_new = [
             i for i in TIC_p_new if 3.6 < i < 23
         ]  # removing stuff with solvent front and column fragments at the end
-        #TIC_p_new = remove_naphtalene_contamination(
+        # TIC_p_new = remove_naphtalene_contamination(
         #    self.spec, TIC_p_new
-        #)  # it persists from previous exp
+        # )  # it persists from previous exp
         return TIC_p_new
 
     def update_tic(self):
@@ -375,16 +384,17 @@ class ProcessMS:
                     xytext=(masses[f], peaks[f] + 0.01),
                 )
 
-    def plot_nmr(self, ax):
+    def plot_nmr(self, ax, nmr_react):
         """
         plot NMR
         """
         if not hasattr(self, "nmr_reactivity"):
-            self.get_nmr_data()
+            self.get_nmr_data(nmr_react)
         multiplier = len(self.reagents)
-        ax.set_title(str(self.nmr_reactivity))
+        if nmr_react:
+            ax.set_title(str(self.nmr_reactivity))
         ax.plot(self.nmr_xscale, self.nmr_recon, c="blue")
-        ax.plot(self.nmr_xscale, self.nmr_yscale*multiplier, c="red")
+        ax.plot(self.nmr_xscale, self.nmr_yscale * multiplier, c="red")
         ax.set_ylim([-0.1, 0.5])
         ax.invert_xaxis()
 
@@ -401,29 +411,51 @@ class ProcessMS:
         TIC_flat = self.TIC[1] - z  # applying the baseline
         TIC_noise = savgol_filter(TIC_flat, 15, 2)
 
-        ax.plot(self.TIC[0], TIC_noise, c="blue", zorder=1, alpha=0.4, label='MS', linestyle='dashed')
+        ax.plot(
+            self.TIC[0],
+            TIC_noise,
+            c="blue",
+            zorder=1,
+            alpha=0.4,
+            label="MS",
+            linestyle="dashed",
+        )
         ax.scatter(
-                self.TIC_p_filt, [-0.2] * len(self.TIC_p_filt), zorder=2, c="green",alpha=0.4
-            )
-        
+            self.TIC_p_filt,
+            [-0.2] * len(self.TIC_p_filt),
+            zorder=2,
+            c="green",
+            alpha=0.4,
+        )
+
         if self.has_hplc:
             ax.set_title(str(self.hplc_reactivity))
             ax.plot(
                 self.hplc_mix[:, 0],
                 (self.hplc_mix[:, 1] / max(self.hplc_recon)),
-                c="orange", label='mix'
+                c="orange",
+                label="mix",
             )
             ax.plot(
-                self.hplc_mix[:, 0], (self.hplc_diff / max(self.hplc_recon)), c="red", alpha = 0.5, label = 'new'
+                self.hplc_mix[:, 0],
+                (self.hplc_diff / max(self.hplc_recon)),
+                c="red",
+                alpha=0.5,
+                label="new",
             )
-            ax.plot(self.hplc_mix[:,0], self.hplc_recon/ max(self.hplc_recon), c="green", label='reagents')
+            ax.plot(
+                self.hplc_mix[:, 0],
+                self.hplc_recon / max(self.hplc_recon),
+                c="green",
+                label="reagents",
+            )
             # ax.scatter(
-                # np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
-                # self.hplc_r_p[1]["peak_heights"],
-                # zorder=2,
-                # c="blue",
+            # np.take(self.hplc_mix[:, 0], self.hplc_r_p[0]),
+            # self.hplc_r_p[1]["peak_heights"],
+            # zorder=2,
+            # c="blue",
             # )
-            
+
             ax.scatter(
                 np.take(self.hplc_mix[:, 0], self.hplc_new_p[0]),
                 self.hplc_new_p[1]["peak_heights"],
@@ -477,12 +509,12 @@ class ProcessMS:
                         )
                     )
 
-    def plot_all(self):
+    def plot_all(self, nmr_react=False):
         """
         Whip function to visualise all 3 techniques at once
         """
         self.get_hplc_data()
-        self.get_nmr_data()
+        self.get_nmr_data(nmr_react)
 
         # self.remove_known_masses()  # remove blank and reagents peaks
         self.update_tic()
@@ -497,7 +529,7 @@ class ProcessMS:
 
         self.plot_ms(ax1)
         self.plot_hplc_tic(ax2)
-        self.plot_nmr(ax3)
+        self.plot_nmr(ax3, nmr_react)
         plt.show()
 
 
