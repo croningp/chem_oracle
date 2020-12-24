@@ -484,7 +484,7 @@ class ProcessMS:
         self.get_hplc_data()
         self.get_nmr_data()
 
-        #self.remove_known_masses()  # remove blank and reagents peaks
+        # self.remove_known_masses()  # remove blank and reagents peaks
         self.update_tic()
 
         self.TIC_p = find_TIC_peaks(self.TIC)

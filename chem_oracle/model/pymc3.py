@@ -50,7 +50,11 @@ class Model:
             0, 1, size=(self.N_props, self.N_props, self.N_props)
         )
 
-    def sample(self, facts: pd.DataFrame, **sampler_params,) -> pm.sampling.MultiTrace:
+    def sample(
+        self,
+        facts: pd.DataFrame,
+        **sampler_params,
+    ) -> pm.sampling.MultiTrace:
         m = self._pymc3_model(facts)
         with m:
             self.trace = pm.sample(**sampler_params)
@@ -160,7 +164,8 @@ class NonstructuralModel(Model):
         self.ncompounds = ncompounds
 
     def _pymc3_model(
-        self, facts,
+        self,
+        facts,
     ):
         bin_facts = facts[facts["compound3"] == -1]
         bin_r1 = bin_facts.compound1.values
@@ -206,7 +211,8 @@ class NonstructuralModel(Model):
             )
 
             react_matrix = pm.Deterministic(
-                "react_matrix", reactivities_with_zero[self.bi_idx, ...],
+                "react_matrix",
+                reactivities_with_zero[self.bi_idx, ...],
             )
             react_tensor = reactivities_with_zero[self.tri_idx, ...]
 
@@ -333,7 +339,8 @@ class StructuralModel(Model):
             )
 
             react_matrix = pm.Deterministic(
-                "react_matrix", reactivities_with_zero[self.bi_idx, :],
+                "react_matrix",
+                reactivities_with_zero[self.bi_idx, :],
             )
             react_tensor = reactivities_with_zero[self.tri_idx, ...]
 

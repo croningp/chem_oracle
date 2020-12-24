@@ -8,7 +8,6 @@ use_cpu = "ORACLE_USECPU" in os.environ
 if not use_cpu:
     os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -105,7 +104,10 @@ def stick_breaking(beta, normalize=False):
 
 class Model:
     def __init__(
-        self, N_props: int, observe: bool, likelihood_sd: float,
+        self,
+        N_props: int,
+        observe: bool,
+        likelihood_sd: float,
     ):
         self.N_props = N_props
         self.observe = observe
@@ -129,7 +131,10 @@ class Model:
         mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_params)
         rng_key = PRNGKey(0)
         mcmc.run(
-            rng_key, facts, *(model_params or []), extra_fields=("potential_energy",),
+            rng_key,
+            facts,
+            *(model_params or []),
+            extra_fields=("potential_energy",),
         )
         self.trace = {**mcmc.get_samples(), **mcmc.get_extra_fields()}
         # convert trace data to plain old numpy arrays
@@ -255,14 +260,15 @@ class Model:
             new_facts.loc[tri_missings, ["reactivity_disruption"]] = r[n_bin:]
             new_facts.loc[tri_missings, ["uncertainty_disruption"]] = u[n_bin:]
 
-
         return new_facts
 
 
 class NonstructuralModel(Model):
     def __init__(self, ncompounds, N_props=8, observe=True, likelihood_sd=0.25):
         super().__init__(
-            N_props=N_props, observe=observe, likelihood_sd=likelihood_sd,
+            N_props=N_props,
+            observe=observe,
+            likelihood_sd=likelihood_sd,
         )
         self.ncompounds = ncompounds
 
@@ -302,13 +308,20 @@ class NonstructuralModel(Model):
         mem = deterministic("mem", stick_breaking(mem_beta, normalize=True)[..., 1:])
 
         reactivities_norm = sample(
-            "reactivities_norm", dist.Beta(1.0, 3.0), sample_shape=(N_bin + N_tri,),
+            "reactivities_norm",
+            dist.Beta(1.0, 3.0),
+            sample_shape=(N_bin + N_tri,),
         )
 
         # add zero entry for self-reactivity for each reactivity mode
-        reactivities_with_zero = jnp.concatenate([jnp.zeros((1,)), reactivities_norm],)
+        reactivities_with_zero = jnp.concatenate(
+            [jnp.zeros((1,)), reactivities_norm],
+        )
 
-        react_matrix = deterministic("react_matrix", reactivities_with_zero[bi_idx],)
+        react_matrix = deterministic(
+            "react_matrix",
+            reactivities_with_zero[bi_idx],
+        )
         react_tensor = deterministic("react_tensor", reactivities_with_zero[tri_idx])
 
         m1, m2 = mem[bin_r1, :][:, :, np.newaxis], mem[bin_r2, :][:, np.newaxis, :]
@@ -316,7 +329,10 @@ class NonstructuralModel(Model):
 
         bin_doesnt_react = deterministic(
             "bin_doesnt_react",
-            jnp.prod(1 - (m1 * m2) * react_matrix[np.newaxis, ...], axis=[1, 2],),
+            jnp.prod(
+                1 - (m1 * m2) * react_matrix[np.newaxis, ...],
+                axis=[1, 2],
+            ),
         )
 
         tri_no_react = deterministic(
@@ -405,7 +421,9 @@ class StructuralModel(Model):
         # """fingerprints: Matrix of Morgan fingerprints for reagents."""
 
         super().__init__(
-            N_props=N_props, observe=observe, likelihood_sd=likelihood_sd,
+            N_props=N_props,
+            observe=observe,
+            likelihood_sd=likelihood_sd,
         )
 
         self.fingerprints = fingerprint_matrix
@@ -447,11 +465,15 @@ class StructuralModel(Model):
         mem = deterministic("mem", stick_breaking(mem_beta, normalize=True)[..., 1:])
 
         reactivities_norm = sample(
-            "reactivities_norm", dist.Beta(1.0, 3.0), sample_shape=(N_bin + N_tri,),
+            "reactivities_norm",
+            dist.Beta(1.0, 3.0),
+            sample_shape=(N_bin + N_tri,),
         )
 
         # add zero entry for self-reactivity for each reactivity mode
-        reactivities_with_zero = jnp.concatenate([jnp.zeros((1,)), reactivities_norm],)
+        reactivities_with_zero = jnp.concatenate(
+            [jnp.zeros((1,)), reactivities_norm],
+        )
 
         react_matrix = deterministic("react_matrix", reactivities_with_zero[bi_idx])
         react_tensor = deterministic("react_tensor", reactivities_with_zero[tri_idx])
@@ -478,7 +500,10 @@ class StructuralModel(Model):
 
         bin_doesnt_react = deterministic(
             "bin_doesnt_react",
-            jnp.prod(1 - (m1 * m2) * react_matrix[np.newaxis, ...], axis=[1, 2],),
+            jnp.prod(
+                1 - (m1 * m2) * react_matrix[np.newaxis, ...],
+                axis=[1, 2],
+            ),
         )
 
         tri_no_react = deterministic(

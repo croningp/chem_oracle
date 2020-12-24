@@ -412,9 +412,9 @@ class ExperimentManager:
 
     def populate(self, ranges=None):
         """
-            Add entries for missing reactions to reaction dataframe.
-            Existing entries are left intact.
-            """
+        Add entries for missing reactions to reaction dataframe.
+        Existing entries are left intact.
+        """
         if ranges is None:
             all_compounds = [self.reagents_df["reagent_number"]]
         else:
@@ -439,4 +439,3 @@ class ExperimentManager:
         self.reactions_df = df.drop_duplicates(
             subset=["compound1", "compound2", "compound3"]
         ).reset_index(drop=True)
-

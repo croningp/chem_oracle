@@ -23,7 +23,7 @@ def indices(N: int, ndims: int) -> np.ndarray:
            [0, 1, 3],
            [0, 2, 3],
            [1, 2, 3]])
-    
+
     Note that any permutation of the indices would correspond to the same linear
     index since the tensor is symmetric. `A[[0, 1, 2]] == A[[1, 2, 0]]` etc.
     """
