@@ -212,7 +212,7 @@ class ExperimentManager:
         sys.__excepthook__(type, value, traceback)
 
     def read_experiments(self):
-        with pd.ExcelFile(self.xlsx_file) as reader:
+        with pd.ExcelFile(self.xlsx_file, engine="openpyxl") as reader:
             self.reagents_df: pd.DataFrame = pd.read_excel(
                 reader,
                 sheet_name="reagents",
@@ -253,7 +253,7 @@ class ExperimentManager:
         if dataframe:
             if backup and path.exists(self.xlsx_file):
                 copyfile(self.xlsx_file, backup_file)
-            with pd.ExcelWriter(self.xlsx_file) as writer:
+            with pd.ExcelWriter(self.xlsx_file, engine="openpyxl") as writer:
                 self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
                 self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
         # also save dataframe + trace as pickle
