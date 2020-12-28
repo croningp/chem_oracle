@@ -185,7 +185,6 @@ class ExperimentManager:
         if structural_model:
             # calculate fingerprints
             self.mols = list(self.reagents_df["SMILES"])
-            # TODO: expose this as a parameter
             if fingerprints == "morgan":
                 self.fingerprints = morgan_matrix(
                     self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
@@ -284,6 +283,7 @@ class ExperimentManager:
             n_samples (int): Number of samples in each MCMC chain.
         """
         with self.update_lock:
+            self.logger.info("Starting sampling ...")
             if self.knowledge_trace:
                 self.logger.debug(f"Using existing knowledge trace.")
                 # produce posterior predictive trace from supplied knowledge
@@ -298,9 +298,11 @@ class ExperimentManager:
                 self.model.sample(
                     self.reactions_df, draws=draws, tune=tune, **sample_kwargs
                 )
+            self.logger.info("Conditioning on trace ...")
             self.reactions_df = self.model.condition(
                 self.reactions_df, **condition_kwargs
             )
+            self.logger.info("Model update complete.")
 
     def data_folder(self, reagent_number: int, data_type: str, blank=False) -> str:
         """
