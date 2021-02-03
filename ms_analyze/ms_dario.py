@@ -17,11 +17,12 @@ import matplotlib.ticker as ticker
 
 DEFAULT_MODEL = MODELS["model19-11-13.tf"]
 
-MAIN_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
-REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
+DATA_HOME = "/home/group/Discovery data/data2"
+MAIN_FOLDER = DATA_HOME
+REAGENTS_FOLDER = os.path.join(DATA_HOME, "reagents")
 
 
-name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data3.xlsx"))
+name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data3.xlsx"), engine="openpyxl")
 
 ms_lib = {
     0: (56.0, 42.0, 83.0),
@@ -81,7 +82,12 @@ def get_ms(path):
     """
     Returns a MassSpectra object from a path
     """
-    file = glob.glob(os.path.join(path, "*_is1.npz"))[0]
+    try:
+        file = glob.glob(os.path.join(path, "*_is1.npz"))[0]
+    except IndexError:
+        # in case only one polarity (+ or -) is collected
+        file = glob.glob(os.path.join(path, "*.npz"))[0]
+
     spec = MassSpectra.from_npz(file)
     return spec
 
@@ -121,9 +127,7 @@ def get_reagent_spectrum(n):
     Takes the reagent number return its MassSpectra object
     """
     path = get_reagent_file(n)
-    file = glob.glob(os.path.join(path, "*_is1.npz"))[0]
-    spec = MassSpectra.from_npz(file)
-    return spec
+    return get_ms(path)
 
 
 def get_reagent_weight(n):
