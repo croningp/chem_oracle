@@ -20,7 +20,6 @@ if gpus:
             [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=256)],
         )
         logical_gpus = tf.config.experimental.list_logical_devices("GPU")
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
         # Virtual devices must be set before GPUs have been initialized
         print(e)
@@ -50,8 +49,10 @@ REAGENT_DIRS = {
     for p in glob.glob(path.join(DATA_FOLDER, "reagents", "*_1H"))
 }
 
-REAGENT_SPECTRA = NMRDataset(
-    [REAGENT_DIRS[i] for i in sorted(REAGENT_DIRS)], target_length=TARGET_LENGTH
+REAGENT_SPECTRA = NMRDataset.from_dirs(
+    [REAGENT_DIRS[i] for i in sorted(REAGENT_DIRS)],
+    target_length=TARGET_LENGTH,
+    progress=False,
 )
 
 MODELS = {

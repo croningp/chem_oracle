@@ -5,3 +5,4 @@ data
 *.pyc
 *.ipynb
 **/.ipynb_checkpoints
+.mypy_cache/
