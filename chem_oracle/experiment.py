@@ -412,11 +412,12 @@ class ExperimentManager:
             rdf.loc[selector, reactivity_column] = reactivity
         self.logger.debug("Update lock released.")
 
-    def populate(self, ranges=None):
+    def populate(self, ranges=None, n_components=3):
         """
         Add entries for missing reactions to reaction dataframe.
         Existing entries are left intact.
         """
+        columns = [f"compound{i}" for i in range(1, n_components + 1)]
         if ranges is None:
             all_compounds = [self.reagents_df["reagent_number"]]
         else:
@@ -424,20 +425,47 @@ class ExperimentManager:
                 self.reagents_df.loc[rng, "reagent_number"] for rng in ranges
             ]
         df = self.reactions_df
-        for compounds in all_compounds:
-            compounds = list(compounds)
-            c = list(enumerate(compounds))
-            additions = pd.DataFrame(
-                [
-                    (c1, c2, c3)
-                    for (i1, c1) in c
-                    for (i2, c2) in c[i1 + 1 :]
-                    for (c3) in (compounds[i2 + 1 :] + [-1])
-                ],
-                columns=["compound1", "compound2", "compound3"],
-            )
-            df = pd.concat([df, additions], ignore_index=True)
+        if n_components == 3:
+            for compounds in all_compounds:
+                compounds = list(compounds)
+                c = list(enumerate(compounds))
+                additions = pd.DataFrame(
+                    [
+                        (c1, c2, c3)
+                        for (i1, c1) in c
+                        for (i2, c2) in c[i1 + 1 :]
+                        for (c3) in (compounds[i2 + 1 :] + [-1])
+                    ],
+                    columns=columns,
+                )
+                df = pd.concat([df, additions], ignore_index=True)
+        else:
+            for compounds in all_compounds:
+                compounds = list(compounds)
+                c = list(enumerate(compounds))
+                additions = pd.DataFrame(
+                    [
+                        (c1, c2, c3, c4)
+                        for (i1, c1) in c
+                        for (i2, c2) in c[i1 + 1 :]
+                        for (i3, c3) in c[i2 + 1 :] + [(len(c) - 1, -1)]
+                        for (c4) in (compounds[i3 + 1 :] + [-1])
+                    ],
+                    columns=columns,
+                    dtype=int,
+                )
+                df = pd.concat([df, additions], ignore_index=True)
+
         # convert compound numbers back to int (pandas bug)
         self.reactions_df = df.drop_duplicates(
-            subset=["compound1", "compound2", "compound3"]
-        ).reset_index(drop=True)
+            subset=columns,
+        )
+
+        # rearrange columns so compound1 - compound4 come first
+        self.reactions_df.set_index(columns, inplace=True)
+        self.reactions_df.sort_index(inplace=True)
+        self.reactions_df.reset_index(inplace=True)
+
+        # make sure all compound #'s are integers
+        for column in columns:
+            self.reactions_df[column] = self.reactions_df[column].astype(int)

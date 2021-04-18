@@ -54,7 +54,8 @@ def uncertainty_disruption(observations, probabilities):
 def disruptions(facts, trace, method_name: str):
     # binary reactions
     bins = facts[(facts["compound3"] == -1)]
-    tris = facts[(facts["compound3"] != -1)]
+    tris = facts[(facts["compound3"] != -1) & (facts["compound4"] == -1)]
+    tets = facts[(facts["compound4"] != -1)]
 
     bin_impute = trace.get(
         f"reacts_binary_{method_name}_missing",
@@ -64,14 +65,20 @@ def disruptions(facts, trace, method_name: str):
         f"reacts_ternary_{method_name}_missing",
         np.zeros((trace["tri_doesnt_react"].shape[0], 0), dtype="float32"),
     )
+    tet_impute = trace.get(
+        f"reacts_quaternary_{method_name}_missing",
+        np.zeros((trace["tet_doesnt_react"].shape[0], 0), dtype="float32"),
+    )
 
-    observations = np.hstack((bin_impute, tri_impute)).T
+    observations = np.hstack((bin_impute, tri_impute, tet_impute)).T
     probabilities = np.hstack(
         (
             1
             - trace["bin_doesnt_react"][:, pd.isna(bins[f"{method_name}_reactivity"])],
             1
             - trace["tri_doesnt_react"][:, pd.isna(tris[f"{method_name}_reactivity"])],
+            1
+            - trace["tet_doesnt_react"][:, pd.isna(tets[f"{method_name}_reactivity"])],
         )
     ).T
     return (
@@ -95,11 +102,14 @@ def differential_disruptions(
     )  # latter case applies to PyMC3 traces
     for _ in range(n):
         bin_missings = (f["compound3"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
-        tri_missings = (f["compound3"] != -1) & pd.isna(f[f"{method_name}_reactivity"])
+        tri_missings = (f["compound3"] != -1) & (f["compound4"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
+        tet_missings = (f["compound4"] != -1) & pd.isna(f[f"{method_name}_reactivity"])
+        
         n_bin = bin_missings.sum()
         n_tri = tri_missings.sum()
+        n_tet = tet_missings.sum()
 
-        if n_bin + n_tri == 0:
+        if n_bin + n_tri + n_tet == 0:
             # no more missing experiments - we are done
             break
 
@@ -113,10 +123,15 @@ def differential_disruptions(
         if top_rxn < n_bin:
             var_name = f"reacts_binary_{method_name}_missing"
             index_name = f.index[bin_missings]
-        else:
+        elif n_bin < top_rxn < n_bin + n_tri:
             var_name = f"reacts_ternary_{method_name}_missing"
             index_name = f.index[tri_missings]
             top_rxn -= n_bin
+        else:
+            var_name = f"reacts_quaternary_{method_name}_missing"
+            index_name = f.index[tet_missings]
+            top_rxn -= n_bin + n_tri
+
         # assign top pick as reactive or unreactive
         outcome = t[var_name][:, top_rxn].mean() > 0.5 and 1.0 or 0.0
         f.loc[index_name[top_rxn], f"{method_name}_reactivity"] = outcome
