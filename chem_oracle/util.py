@@ -1,4 +1,4 @@
-from itertools import combinations, permutations
+import itertools
 from os import path
 from typing import Iterable, List
 
@@ -11,7 +11,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Draw
 
 
-def indices(N: int, ndims: int) -> np.ndarray:
+def indices(N: int, ndims: int, allow_repeat=False) -> np.ndarray:
     """
     Generates an array `A` of indices where the permutations of `A[n]` give the
     unique non-zero indices of a symmetric rank `ndims` tensor with dimensions
@@ -27,13 +27,11 @@ def indices(N: int, ndims: int) -> np.ndarray:
     Note that any permutation of the indices would correspond to the same linear
     index since the tensor is symmetric. `A[[0, 1, 2]] == A[[1, 2, 0]]` etc.
     """
-    v = []
-    for comb in combinations(range(N), ndims):
-        v.append(" ".join(str(s) for s in comb))
-    v.sort()
-    v = [e.split(" ") for e in v]
-    return np.array(v, dtype="int")
-
+    if allow_repeat:
+        combs = itertools.combinations_with_replacement(range(N), ndims)
+    else:
+        combs = itertools.combinations(range(N), ndims)
+    return np.array(list(combs))
 
 def triangular_indices(N, ndims, shift=0):
     """
@@ -43,7 +41,7 @@ def triangular_indices(N, ndims, shift=0):
     idx = indices(N, ndims)
     t = tt.zeros(tuple(N for _ in range(ndims)), dtype="int")
     for i, ind in enumerate(idx):
-        for perm in permutations(ind):
+        for perm in itertools.permutations(ind):
             t = tt.set_subtensor(t[perm], i + shift + 1)
     return t
 
