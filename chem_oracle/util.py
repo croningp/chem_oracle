@@ -3,10 +3,6 @@ from os import path
 from typing import Iterable, List
 
 import numpy as np
-import pandas as pd
-import pymc3 as pm
-import theano.tensor as tt
-from matplotlib import pyplot as plt
 from rdkit import Chem
 from rdkit.Chem import AllChem, Draw
 
@@ -32,70 +28,6 @@ def indices(N: int, ndims: int, allow_repeat=False) -> np.ndarray:
     else:
         combs = itertools.combinations(range(N), ndims)
     return np.array(list(combs))
-
-def triangular_indices(N, ndims, shift=0):
-    """
-    N: is the number of properties len(v) =  N*(N-1)*...*(N-(ndim-1))/ndim!
-    ndim: number of tensor dimensions
-    """
-    idx = indices(N, ndims)
-    t = tt.zeros(tuple(N for _ in range(ndims)), dtype="int")
-    for i, ind in enumerate(idx):
-        for perm in itertools.permutations(ind):
-            t = tt.set_subtensor(t[perm], i + shift + 1)
-    return t
-
-
-def stick_breaking(beta, normalize=False):
-    t1 = tt.ones((*beta.shape[:-1], 1))
-    t2 = tt.extra_ops.cumprod(1 - beta, axis=-1)[..., :-1]
-    portion_remaining = tt.concatenate([t1, t2], axis=-1)
-    res = beta * portion_remaining
-    if normalize:
-        return res / res.max(axis=1, keepdims=True)
-    return res
-
-
-def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
-    # 1 - (probability that any combination of two reagents react independently)
-    tri_doesnt_react_binary = (
-        tt.prod(
-            1
-            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
-                ..., np.newaxis
-            ]
-            * react_matrix[np.newaxis, ...],
-            axis=[1, 2, 3],
-        )
-        * tt.prod(
-            1
-            - tt.batched_dot(M1[:, :, np.newaxis], M3[:, np.newaxis, :])[
-                ..., np.newaxis
-            ]
-            * react_matrix[np.newaxis, ...],
-            axis=[1, 2, 3],
-        )
-        * tt.prod(
-            1
-            - tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[
-                ..., np.newaxis
-            ]
-            * react_matrix[np.newaxis, ...],
-            axis=[1, 2, 3],
-        )
-    )
-    # 1 - (probability that genuine three-component reaction occurs)
-    tri_doesnt_react_ternary = tt.prod(
-        1
-        - tt.batched_dot(
-            tt.batched_dot(M1[:, :, np.newaxis], M2[:, np.newaxis, :])[..., np.newaxis],
-            M3[:, np.newaxis, :],
-        )[..., np.newaxis]
-        * react_tensor[np.newaxis, ...],
-        axis=[1, 2, 3, 4],
-    )
-
-    return tri_doesnt_react_binary * tri_doesnt_react_ternary
 
 
 def morgan_bits(smiles: str, radius: int, nbits: int) -> np.ndarray:
@@ -128,62 +60,6 @@ def split_bin_tri(facts):
     bin_facts = facts[facts["compound3"] == -1]
     tri_facts = facts[facts["compound3"] != -1]
     return bin_facts, tri_facts
-
-
-def build_results(predictions, new_facts):
-    tri_stds = np.std(predictions["tri_doesnt_react"], axis=0)
-    tri_mean_pred = 1 - np.mean(predictions["tri_doesnt_react"], axis=0)
-    bin_stds = np.std(predictions["bin_doesnt_react"], axis=0)
-    bin_mean_pred = 1 - np.mean(predictions["bin_doesnt_react"], axis=0)
-    bin_new_facts, tri_new_facts = split_bin_tri(new_facts)
-
-    bin_new_facts["stdd"] = bin_stds
-    bin_new_facts["prediction"] = bin_mean_pred
-    bin_new_facts["rounded_pred"] = np.round(bin_new_facts["prediction"])
-    tri_new_facts["stdd"] = tri_stds
-    tri_new_facts["prediction"] = tri_mean_pred
-    tri_new_facts["rounded_pred"] = np.round(tri_new_facts["prediction"])
-
-    full_facts = pd.concat([tri_new_facts, bin_new_facts]).sort_index()
-
-    return full_facts
-
-
-def predict(trained_model, new_facts):
-    prediction_model = trained_model.pymc3_model(new_facts)
-    with prediction_model:
-        predictions = pm.sample_posterior_predictive(
-            trained_model.trace, vars=prediction_model.deterministics
-        )
-    full_facts = build_results(predictions, new_facts)
-    return full_facts
-
-
-def posterior_reactivity_plot(fact_number, posterior_trace, facts):
-    f = plt.figure()
-    bin_facts = facts[facts["compound3"] == -1]
-    tri_facts = facts[facts["compound3"] != -1]
-    active_facts = bin_facts if fact_number in bin_facts.index else tri_facts
-    var_name = (
-        "bin_doesnt_react" if fact_number in bin_facts.index else "tri_doesnt_react"
-    )
-    location = active_facts.index.get_loc(fact_number)
-    reactant_names = active_facts.iloc[location][
-        ["reagent_name1", "reagent_name2", "reagent_name3"]
-    ]
-    plt.hist(
-        1 - posterior_trace[var_name][:, location],
-        np.linspace(0, 1, 30),
-        density=True,
-        color="lightgrey",
-        rwidth=0.8,
-    )
-    pm.plots.kdeplot(1 - posterior_trace[var_name][:, location])
-    plt.title(" + ".join(rn for rn in reactant_names if rn != "N/A"))
-    plt.xlim((0.0, 1.0))
-    plt.yticks([])
-    plt.xlabel("Reaction probability")
-    return f, 1 - posterior_trace[var_name][:, location]
 
 
 def reaction_number(experiment_dir: str) -> int:

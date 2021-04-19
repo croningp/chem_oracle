@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.model import numpyro, pymc3
+from chem_oracle.model import numpyro
 from chem_oracle.util import morgan_matrix, rdkit_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
