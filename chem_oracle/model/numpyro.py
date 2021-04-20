@@ -33,107 +33,6 @@ SAMPLED_RVS = [
 ]
 
 
-def tri_doesnt_react(M1, M2, M3, M4, reactor_tensor2, reactor_tensor3, react_tensor):
-    # 1 - (probability that any combination of two reagents react independently)
-    tri_doesnt_react_binary = (
-        jnp.prod(
-            1
-            - (
-                M1[:, :, jnp.newaxis]
-                * M2[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-        * jnp.prod(
-            1
-            - (
-                M1[:, :, jnp.newaxis]
-                * M3[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-        * jnp.prod(
-            1
-            - (
-                M2[:, :, jnp.newaxis]
-                * M3[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-    )
-    # 1 - (probability that genuine three-component reaction occurs)
-    tri_doesnt_react_ternary = jnp.prod(
-        1
-        - (
-            M1[:, :, jnp.newaxis, jnp.newaxis]
-            * M2[:, jnp.newaxis, :, jnp.newaxis]
-            * M3[:, jnp.newaxis, jnp.newaxis, :]
-            * react_tensor[np.newaxis, ...]
-        ),
-        axis=[1, 2, 3],
-    )
-
-    return tri_doesnt_react_binary * tri_doesnt_react_ternary
-
-
-def tri_doesnt_react(M1, M2, M3, react_matrix, react_tensor):
-    # 1 - (probability that any combination of two reagents react independently)
-    tri_doesnt_react_binary = (
-        jnp.prod(
-            1
-            - (
-                M1[:, :, jnp.newaxis]
-                * M2[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-        * jnp.prod(
-            1
-            - (
-                M1[:, :, jnp.newaxis]
-                * M3[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-        * jnp.prod(
-            1
-            - (
-                M2[:, :, jnp.newaxis]
-                * M3[:, jnp.newaxis, :]
-                * react_matrix[jnp.newaxis, ...]
-            ),
-            axis=[1, 2],
-        )
-    )
-    # 1 - (probability that genuine three-component reaction occurs)
-    tri_doesnt_react_ternary = jnp.prod(
-        1
-        - (
-            M1[:, :, jnp.newaxis, jnp.newaxis]
-            * M2[:, jnp.newaxis, :, jnp.newaxis]
-            * M3[:, jnp.newaxis, jnp.newaxis, :]
-            * react_tensor[np.newaxis, ...]
-        ),
-        axis=[1, 2, 3],
-    )
-
-    return tri_doesnt_react_binary * tri_doesnt_react_ternary
-
-
-def lookup_tensor(tensor: np.ndarray):
-    lut_shape = (tensor.max() + 1,) * tensor.shape[-1]
-    lut = np.zeros(shape=lut_shape, dtype=int)
-    for i, t in enumerate(tensor):
-        for p in permutations(t):
-            lut[p] = i
-    return lut
-
-
 def triangular_indices(N, ndims, shift=0):
     """
     N: is the number of properties len(v) =  N*(N-1)*...*(N-(ndim-1))/ndim!
@@ -691,16 +590,6 @@ class StructuralModel(Model):
         self.fingerprints = fingerprint_matrix
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
-        # Allow binary combinations of a compound with itself
-        self.bin_combinations = jnp.array(
-            indices(self.ncompounds, 2, allow_repeat=True)
-        )
-        self.bin_idx = lookup_tensor(self.bin_combinations)
-        self.tri_combinations = jnp.array(indices(self.ncompounds, 3))
-        self.tri_idx = lookup_tensor(self.tri_combinations)
-        self.tet_combinations = jnp.array(indices(self.ncompounds, 4))
-        self.tet_idx = lookup_tensor(self.tet_combinations)
-
     def _pyro_model(self, facts, impute=True):
         N_bin = self.N_props * (self.N_props - 1) // 2
         N_tri = N_bin * (self.N_props - 2) // 3
@@ -774,7 +663,6 @@ class StructuralModel(Model):
                 ]
             )
         ]
-
 
         bin_doesnt_react = deterministic(
             "bin_doesnt_react",
