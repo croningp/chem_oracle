@@ -22,9 +22,8 @@ from chem_oracle.util import morgan_matrix, rdkit_matrix
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
 from ms_analyze.ms import MassSpectra, MassSpectrum
-from nmr_analyze.nn_model import MODELS, nmr_process
 
-DEFAULT_MODEL = MODELS["model19-11-13.tf"]
+DEFAULT_MODEL = "model19-11-13.tf"
 
 
 def match(
@@ -358,6 +357,9 @@ class ExperimentManager:
             raise ValueError(f"Reaction {c} not found in dataframe.")
 
     def add_data(self, data_dir: str, data_type: str, **params):
+        from nmr_analyze.nn_model import MODELS, nmr_process
+
+        model = MODELS[DEFAULT_MODEL]
         if "BLANK" in data_dir:
             return
         reaction_number = util.reaction_number(data_dir)
@@ -401,7 +403,7 @@ class ExperimentManager:
                 elif data_type == "HPLC":
                     reactivity = hplc_process(data_dir)
                 elif data_type == "NMR":
-                    reactivity = nmr_process(data_dir, DEFAULT_MODEL)
+                    reactivity = nmr_process(data_dir, model)
             except Exception as e:
                 self.logger.exception(f"Error processing {data_dir}: {e}.")
                 return
