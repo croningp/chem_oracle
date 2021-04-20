@@ -5,7 +5,7 @@ from typing import Dict
 
 use_cpu = "ORACLE_USECPU" in os.environ
 
-if not use_cpu:
+if not use_cpu and "XLA_FLAGS" not in os.environ:
     os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
 
 import jax.numpy as jnp
