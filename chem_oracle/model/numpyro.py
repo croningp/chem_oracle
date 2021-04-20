@@ -128,25 +128,21 @@ class Model:
             self._pyro_model, trace, facts, False  # do not impute - important!
         )
 
-    def experiment_likelihoods(self, facts: pd.DataFrame, trace=None):
+    def experiment_likelihoods(self, facts: pd.DataFrame, trace=None, method="NMR"):
         trace = trace or self.trace
         likelihoods = self.log_likelihoods(facts, trace)
-        bins = likelihoods["reacts_binary_NMR"]
-        tris = likelihoods["reacts_ternary_NMR"]
-        result = []
-        bin_idx = 0
-        tri_idx = 0
-        for _, (_, _, _, c3) in enumerate(
-            facts[["compound1", "compound2", "compound3"]].itertuples()
-        ):
-            if c3 == -1:
-                # binary reaction
-                result.append(bins[:, bin_idx])
-                bin_idx += 1
-            else:
-                result.append(tris[:, tri_idx])
-                tri_idx += 1
-        return np.stack(result).T
+        bins = likelihoods[f"reacts_binary_{method}"]
+        tris = likelihoods[f"reacts_ternary_{method}"]
+        quats = likelihoods[f"reacts_quaternary_{method}"]
+        assert bins.shape[0] == tris.shape[0] == quats.shape[0]
+        assert len(facts) == bins.shape[1] + tris.shape[1] + quats.shape[1]
+
+        result = np.zeros((bins.shape[0], len(facts)))
+        result[:, facts.query("compound3==-1").index] = bins
+        result[:, facts.query("compound3!=-1 and compound4==-1").index] = tris
+        result[:, facts.query("compound4!=-1").index] = quats
+
+        return result
 
     def condition(
         self,
@@ -207,12 +203,10 @@ class Model:
             new_facts[f"{method_name}_reactivity"]
         )
 
-        new_facts["likelihood"] = self.experiment_likelihoods(facts, prediction).mean(
-            axis=0
-        )
-        new_facts["likelihood_sd"] = self.experiment_likelihoods(facts, prediction).std(
-            axis=0
-        )
+        likelihoods = self.experiment_likelihoods(facts, prediction)
+
+        new_facts["likelihood"] = likelihoods.mean(axis=0)
+        new_facts["likelihood_sd"] = likelihoods.std(axis=0)
 
         n_bin = bin_missings.sum()
         n_tri = tri_missings.sum()
