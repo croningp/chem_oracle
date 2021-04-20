@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.model import numpyro
+from chem_oracle.model.numpyro import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix, rdkit_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
@@ -140,7 +140,6 @@ class ExperimentManager:
         fingerprint_bits=512,
         seed=None,
         log_level=logging.WARN,
-        backend=numpyro,
         knowledge_trace=None,
         monitor=True,
         override=False,
@@ -193,11 +192,11 @@ class ExperimentManager:
                     self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
                 )
 
-            self.model = backend.StructuralModel(
+            self.model = StructuralModel(
                 self.fingerprints, **{"N_props": N_props, **model_params}
             )
         else:
-            self.model = backend.NonstructuralModel(
+            self.model = NonstructuralModel(
                 self.n_compounds, **{"N_props": N_props, **model_params}
             )
 

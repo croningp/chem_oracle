@@ -102,9 +102,13 @@ def differential_disruptions(
     )  # latter case applies to PyMC3 traces
     for _ in range(n):
         bin_missings = (f["compound3"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
-        tri_missings = (f["compound3"] != -1) & (f["compound4"] == -1) & pd.isna(f[f"{method_name}_reactivity"])
+        tri_missings = (
+            (f["compound3"] != -1)
+            & (f["compound4"] == -1)
+            & pd.isna(f[f"{method_name}_reactivity"])
+        )
         tet_missings = (f["compound4"] != -1) & pd.isna(f[f"{method_name}_reactivity"])
-        
+
         n_bin = bin_missings.sum()
         n_tri = tri_missings.sum()
         n_tet = tet_missings.sum()
