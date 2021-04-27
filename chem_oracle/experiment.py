@@ -176,7 +176,8 @@ class ExperimentManager:
         self.logger = logging.getLogger("experiment-manager")
         self.logger.setLevel(log_level)
 
-        self.read_experiments()
+        self.reagents_df = self.read_reagents()
+        self.reactions_df = self.read_reactions()
 
         self.n_compounds = len(self.reagents_df["reagent_number"].unique())
 
@@ -208,9 +209,9 @@ class ExperimentManager:
         self.logger.exception(f"ERROR {type}")
         sys.__excepthook__(type, value, traceback)
 
-    def read_experiments(self):
+    def read_reagents(self):
         with pd.ExcelFile(self.xlsx_file, engine="openpyxl") as reader:
-            self.reagents_df: pd.DataFrame = pd.read_excel(
+            return pd.read_excel(
                 reader,
                 sheet_name="reagents",
                 dtype={
@@ -222,7 +223,10 @@ class ExperimentManager:
                     "data_folder": str,
                 },
             )
-            self.reactions_df: pd.DataFrame = pd.read_excel(
+
+    def read_reactions(self):
+        with pd.ExcelFile(self.xlsx_file, engine="openpyxl") as reader:
+            return pd.read_excel(
                 reader,
                 sheet_name="reactions",
                 dtype={
@@ -247,11 +251,13 @@ class ExperimentManager:
         timestamp = datetime.now().strftime("-%Y-%m-%d-%H-%M-%S")
         dst_file, ext = path.splitext(self.xlsx_file)
         backup_file = dst_file + timestamp + ext
+        reagents = self.read_reagents()
         if dataframe:
             if backup and path.exists(self.xlsx_file):
                 copyfile(self.xlsx_file, backup_file)
             with pd.ExcelWriter(self.xlsx_file, engine="openpyxl") as writer:
-                self.reagents_df.to_excel(writer, sheet_name="reagents", index=False)
+                # write a fresh copy of the reagents sheet in case the rig has modified it
+                reagents.to_excel(writer, sheet_name="reagents", index=False)
                 self.reactions_df.to_excel(writer, sheet_name="reactions", index=False)
         # also save dataframe + trace as pickle
         pickle_file = dst_file + timestamp + ".pz"
