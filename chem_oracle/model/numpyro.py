@@ -1,4 +1,4 @@
-import logging
+import pdb
 import os
 from itertools import permutations
 from typing import Dict
@@ -251,41 +251,35 @@ class NonstructuralModel(Model):
         self.ncompounds = ncompounds
 
     def _pyro_model(self, facts: pd.DataFrame, impute=True):
+        observation_columns = [col for col in facts.columns if col.startswith("event")]
+        N_event = len(observation_columns)
+
         N_bin = self.N_props * (self.N_props - 1) // 2
         N_tri = N_bin * (self.N_props - 2) // 3
         N_tet = N_tri * (self.N_props - 3) // 4
         bin_facts = facts[facts["compound3"] == -1]
         bin_r1 = bin_facts.compound1.values
         bin_r2 = bin_facts.compound2.values
-        bin_NMR = bin_facts.NMR_reactivity.values
-        bin_HPLC = bin_facts.HPLC_reactivity.values
-        bin_missing_NMR = np.isnan(bin_NMR).nonzero()[0]
-        bin_missing_HPLC = np.isnan(bin_HPLC).nonzero()[0]
-        impute_bin_HPLC = impute and bin_missing_HPLC.any()
-        impute_bin_NMR = impute and bin_missing_NMR.any()
+        bin_obs = bin_facts[observation_columns].values
+        bin_missing_obs = np.isnan(bin_obs).nonzero()
+        impute_bin_obs = impute and bin_missing_obs[0].size > 0
 
         tri_facts = facts.query("compound3 != -1 and compound4 == -1")
         tri_r1 = tri_facts.compound1.values
         tri_r2 = tri_facts.compound2.values
         tri_r3 = tri_facts.compound3.values
-        tri_NMR = tri_facts.NMR_reactivity.values
-        tri_HPLC = tri_facts.HPLC_reactivity.values
-        tri_missing_NMR = np.isnan(tri_NMR).nonzero()[0]
-        tri_missing_HPLC = np.isnan(tri_HPLC).nonzero()[0]
-        impute_tri_HPLC = impute and tri_missing_HPLC.any()
-        impute_tri_NMR = impute and tri_missing_NMR.any()
+        tri_obs = tri_facts[observation_columns].values
+        tri_missing_obs = np.isnan(tri_obs).nonzero()
+        impute_tri_obs = impute and tri_missing_obs[0].size > 0
 
         tet_facts = facts[facts["compound4"] != -1]
         tet_r1 = tet_facts.compound1.values
         tet_r2 = tet_facts.compound2.values
         tet_r3 = tet_facts.compound3.values
         tet_r4 = tet_facts.compound3.values
-        tet_NMR = tet_facts.NMR_reactivity.values
-        tet_HPLC = tet_facts.HPLC_reactivity.values
-        tet_missing_NMR = np.isnan(tet_NMR).nonzero()[0]
-        tet_missing_HPLC = np.isnan(tet_HPLC).nonzero()[0]
-        impute_tet_HPLC = impute and tet_missing_HPLC.any()
-        impute_tet_NMR = impute and tet_missing_NMR.any()
+        tet_obs = tet_facts[observation_columns].values
+        tet_missing_obs = np.isnan(tet_obs).nonzero()
+        impute_tet_obs = impute and tet_missing_obs[0].size > 0
 
         mem_beta = sample(
             "mem_beta",
@@ -300,16 +294,16 @@ class NonstructuralModel(Model):
         reactivities_norm = sample(
             "reactivities_norm",
             dist.Beta(1.0, 3.0),
-            sample_shape=(N_bin + N_tri + N_tet,),
+            sample_shape=(N_bin + N_tri + N_tet, N_event),
         )
 
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1,)), reactivities_norm],
+            [jnp.zeros((1, N_event)), reactivities_norm],
         )
 
         react_tensors = [
-            deterministic(f"react_tensor_rank{i+2}", reactivities_with_zero[idx])
+            deterministic(f"react_tensor_rank{i+2}", reactivities_with_zero[idx, :])
             for i, idx in enumerate(
                 [
                     self.bin_reactivity_idx,
@@ -323,8 +317,9 @@ class NonstructuralModel(Model):
             "bin_doesnt_react",
             jnp.prod(
                 1
-                - (mem[bin_r1][:, :, np.newaxis] * mem[bin_r2][:, np.newaxis, :])
-                * react_tensors[0][np.newaxis, :, :],
+                - mem[bin_r1][:, :, np.newaxis, np.newaxis]
+                * mem[bin_r2][:, np.newaxis, :, np.newaxis]
+                * react_tensors[0][np.newaxis, :, :, :],
                 axis=[1, 2],
             ),
         )
@@ -334,31 +329,31 @@ class NonstructuralModel(Model):
             (
                 jnp.prod(
                     1
-                    - mem[tri_r1][:, :, np.newaxis]
-                    * mem[tri_r2][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r1][:, :, np.newaxis]
-                    * mem[tri_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r2][:, :, np.newaxis]
-                    * mem[tri_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tri_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tri_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tri_r3][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r1][:, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r2][:, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tri_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
                     axis=[1, 2, 3],
                 )
             ),
@@ -369,190 +364,141 @@ class NonstructuralModel(Model):
             (
                 jnp.prod(
                     1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r2][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r2][:, :, np.newaxis]
-                    * mem[tet_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r2][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r3][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r3][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
-                    * mem[tet_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r2][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r3][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r3][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
                     axis=[1, 2, 3],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, np.newaxis, :]
-                    * mem[tet_r3][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis]
                     * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
-                    * react_tensors[2][np.newaxis, :, :, :, :],
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[2][np.newaxis, :, :, :, :, :],
                     axis=[1, 2, 3, 4],
                 )
             ),
         )
 
-        if impute_bin_HPLC:
-            hplc_impute_binary = sample(
-                "reacts_binary_HPLC_missing",
+        if impute_bin_obs:
+            obs_impute_binary = sample(
+                "reacts_binary_obs_missing",
                 dist.Normal(
-                    loc=1 - bin_doesnt_react[bin_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - bin_doesnt_react[bin_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            bin_HPLC = ops.index_update(
-                bin_HPLC, bin_missing_HPLC, hplc_impute_binary.clip(0.0, 1.0)
+            bin_obs = ops.index_update(
+                bin_obs, bin_missing_obs, obs_impute_binary.clip(0.0, 1.0)
             )
 
-        if impute_tri_HPLC:
-            hplc_impute_ternary = sample(
-                "reacts_ternary_HPLC_missing",
+        if impute_tri_obs:
+            obs_impute_ternary = sample(
+                "reacts_ternary_obs_missing",
                 dist.Normal(
-                    loc=1 - tri_doesnt_react[tri_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - tri_doesnt_react[tri_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            tri_HPLC = ops.index_update(
-                tri_HPLC, tri_missing_HPLC, hplc_impute_ternary.clip(0.0, 1.0)
+            tri_obs = ops.index_update(
+                tri_obs, tri_missing_obs, obs_impute_ternary.clip(0.0, 1.0)
             )
 
-        if impute_tet_HPLC:
-            hplc_impute_quaternary = sample(
-                "reacts_quaternary_HPLC_missing",
+        if impute_tet_obs:
+            obs_impute_quaternary = sample(
+                "reacts_quaternary_obs_missing",
                 dist.Normal(
-                    loc=1 - tet_doesnt_react[tet_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - tet_doesnt_react[tet_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            tet_HPLC = ops.index_update(
-                tet_HPLC, tet_missing_HPLC, hplc_impute_quaternary.clip(0.0, 1.0)
+            tet_obs = ops.index_update(
+                tet_obs, tet_missing_obs, obs_impute_quaternary.clip(0.0, 1.0)
             )
 
-        if impute_bin_NMR:
-            nmr_impute_binary = sample(
-                "reacts_binary_NMR_missing",
-                dist.Normal(
-                    loc=1 - bin_doesnt_react[bin_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            bin_NMR = ops.index_update(
-                bin_NMR, bin_missing_NMR, nmr_impute_binary.clip(0.0, 1.0)
-            )
+        # pdb.set_trace()
 
-        if impute_tri_NMR:
-            nmr_impute_ternary = sample(
-                "reacts_ternary_NMR_missing",
-                dist.Normal(
-                    loc=1 - tri_doesnt_react[tri_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            tri_NMR = ops.index_update(
-                tri_NMR, tri_missing_NMR, nmr_impute_ternary.clip(0.0, 1.0)
-            )
-
-        if impute_tet_NMR:
-            nmr_impute_quaternary = sample(
-                "reacts_quaternary_NMR_missing",
-                dist.Normal(
-                    loc=1 - tet_doesnt_react[tet_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            tet_NMR = ops.index_update(
-                tet_NMR, tet_missing_NMR, nmr_impute_quaternary.clip(0.0, 1.0)
-            )
-
-        nmr_obs_binary = sample(
-            "reacts_binary_NMR",
+        event_obs_binary = sample(
+            "reacts_binary_obs",
             dist.Normal(loc=1 - bin_doesnt_react, scale=self.likelihood_sd),
-            obs=bin_NMR,
+            obs=bin_obs,
         )
 
-        nmr_obs_ternary = sample(
-            "reacts_ternary_NMR",
+        event_obs_ternary = sample(
+            "reacts_ternary_obs",
             dist.Normal(loc=1 - tri_doesnt_react, scale=self.likelihood_sd),
-            obs=tri_NMR,
+            obs=tri_obs,
         )
 
-        nmr_obs_quaternary = sample(
-            "reacts_quaternary_NMR",
+        event_obs_quaternary = sample(
+            "reacts_quaternary_obs",
             dist.Normal(loc=1 - tet_doesnt_react, scale=self.likelihood_sd),
-            obs=tet_NMR,
-        )
-
-        hplc_obs_binary = sample(
-            "reacts_binary_HPLC",
-            dist.Normal(loc=1 - bin_doesnt_react, scale=self.likelihood_sd),
-            obs=bin_HPLC,
-        )
-
-        hplc_obs_ternary = sample(
-            "reacts_ternary_HPLC",
-            dist.Normal(loc=1 - tri_doesnt_react, scale=self.likelihood_sd),
-            obs=tri_HPLC,
-        )
-
-        hplc_obs_quaternary = sample(
-            "reacts_quaternary_HPLC",
-            dist.Normal(loc=1 - tet_doesnt_react, scale=self.likelihood_sd),
-            obs=tet_HPLC,
+            obs=tet_obs,
         )
 
 
@@ -585,48 +531,42 @@ class StructuralModel(Model):
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
     def _pyro_model(self, facts, impute=True):
+        observation_columns = [col for col in facts.columns if col.startswith("event")]
+        N_event = len(observation_columns)
+
         N_bin = self.N_props * (self.N_props - 1) // 2
         N_tri = N_bin * (self.N_props - 2) // 3
         N_tet = N_tri * (self.N_props - 3) // 4
         bin_facts = facts[facts["compound3"] == -1]
-
         bin_r1 = bin_facts.compound1.values
         bin_r2 = bin_facts.compound2.values
-        bin_NMR = bin_facts.NMR_reactivity.values
-        bin_HPLC = bin_facts.HPLC_reactivity.values
-        bin_missing_NMR = np.isnan(bin_NMR).nonzero()[0]
-        bin_missing_HPLC = np.isnan(bin_HPLC).nonzero()[0]
-        impute_bin_HPLC = impute and bin_missing_HPLC.any()
-        impute_bin_NMR = impute and bin_missing_NMR.any()
+        bin_obs = bin_facts[observation_columns].values
+        bin_missing_obs = np.isnan(bin_obs).nonzero()
+        impute_bin_obs = impute and bin_missing_obs[0].size > 0
 
         tri_facts = facts.query("compound3 != -1 and compound4 == -1")
         tri_r1 = tri_facts.compound1.values
         tri_r2 = tri_facts.compound2.values
         tri_r3 = tri_facts.compound3.values
-        tri_NMR = tri_facts.NMR_reactivity.values
-        tri_HPLC = tri_facts.HPLC_reactivity.values
-        tri_missing_NMR = np.isnan(tri_NMR).nonzero()[0]
-        tri_missing_HPLC = np.isnan(tri_HPLC).nonzero()[0]
-        impute_tri_HPLC = impute and tri_missing_HPLC.any()
-        impute_tri_NMR = impute and tri_missing_NMR.any()
+        tri_obs = tri_facts[observation_columns].values
+        tri_missing_obs = np.isnan(tri_obs).nonzero()
+        impute_tri_obs = impute and tri_missing_obs[0].size > 0
 
         tet_facts = facts[facts["compound4"] != -1]
         tet_r1 = tet_facts.compound1.values
         tet_r2 = tet_facts.compound2.values
         tet_r3 = tet_facts.compound3.values
         tet_r4 = tet_facts.compound3.values
-        tet_NMR = tet_facts.NMR_reactivity.values
-        tet_HPLC = tet_facts.HPLC_reactivity.values
-        tet_missing_NMR = np.isnan(tet_NMR).nonzero()[0]
-        tet_missing_HPLC = np.isnan(tet_HPLC).nonzero()[0]
-        impute_tet_HPLC = impute and tet_missing_HPLC.any()
-        impute_tet_NMR = impute and tet_missing_NMR.any()
+        tet_obs = tet_facts[observation_columns].values
+        tet_missing_obs = np.isnan(tet_obs).nonzero()
+        impute_tet_obs = impute and tet_missing_obs[0].size > 0
 
         mem_beta = sample(
             "mem_beta",
             dist.Beta(0.9, 0.9),
             sample_shape=(self.fingerprint_length, self.N_props + 1),
         )
+
         # the first property is non-reactive, so ignore that
         fp_mem = deterministic(
             "fp_mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
@@ -639,16 +579,16 @@ class StructuralModel(Model):
         reactivities_norm = sample(
             "reactivities_norm",
             dist.Beta(1.0, 3.0),
-            sample_shape=(N_bin + N_tri + N_tet,),
+            sample_shape=(N_bin + N_tri + N_tet, N_event),
         )
 
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1,)), reactivities_norm],
+            [jnp.zeros((1, N_event)), reactivities_norm],
         )
 
         react_tensors = [
-            deterministic(f"react_tensor_rank{i+2}", reactivities_with_zero[idx])
+            deterministic(f"react_tensor_rank{i+2}", reactivities_with_zero[idx, :])
             for i, idx in enumerate(
                 [
                     self.bin_reactivity_idx,
@@ -662,8 +602,9 @@ class StructuralModel(Model):
             "bin_doesnt_react",
             jnp.prod(
                 1
-                - (mem[bin_r1][:, :, np.newaxis] * mem[bin_r2][:, np.newaxis, :])
-                * react_tensors[0][np.newaxis, :, :],
+                - mem[bin_r1][:, :, np.newaxis, np.newaxis]
+                * mem[bin_r2][:, np.newaxis, :, np.newaxis]
+                * react_tensors[0][np.newaxis, :, :, :],
                 axis=[1, 2],
             ),
         )
@@ -673,31 +614,31 @@ class StructuralModel(Model):
             (
                 jnp.prod(
                     1
-                    - mem[tri_r1][:, :, np.newaxis]
-                    * mem[tri_r2][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r1][:, :, np.newaxis]
-                    * mem[tri_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r2][:, :, np.newaxis]
-                    * mem[tri_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tri_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tri_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tri_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tri_r3][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r1][:, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r2][:, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tri_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tri_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tri_r3][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
                     axis=[1, 2, 3],
                 )
             ),
@@ -708,188 +649,137 @@ class StructuralModel(Model):
             (
                 jnp.prod(
                     1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r2][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r2][:, :, np.newaxis]
-                    * mem[tet_r3][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r2][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r3][:, :, np.newaxis]
-                    * mem[tet_r4][:, np.newaxis, :]
-                    * react_tensors[0][np.newaxis, :, :],
-                    axis=[1, 2],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r3][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
-                    * mem[tet_r2][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
-                )
-                * jnp.prod(
-                    1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
-                    axis=[1, 2, 3],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r2][:, np.newaxis, np.newaxis, :]
+                    - mem[tet_r1][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, :, np.newaxis, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis]
-                    * mem[tet_r4][:, :, np.newaxis, np.newaxis]
-                    * react_tensors[1][np.newaxis, :, :, :],
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r3][:, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, np.newaxis, :, np.newaxis]
+                    * react_tensors[0][np.newaxis, :, :, :],
+                    axis=[1, 2],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r3][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
                     axis=[1, 2, 3],
                 )
                 * jnp.prod(
                     1
-                    - mem[tet_r1][:, np.newaxis, np.newaxis, np.newaxis, :]
-                    * mem[tet_r3][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r2][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, :, np.newaxis]
                     * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis]
                     * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
-                    * react_tensors[2][np.newaxis, :, :, :, :],
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r2][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[1][np.newaxis, :, :, :, :],
+                    axis=[1, 2, 3],
+                )
+                * jnp.prod(
+                    1
+                    - mem[tet_r1][:, np.newaxis, np.newaxis, np.newaxis, :, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
+                    * mem[tet_r3][:, np.newaxis, :, np.newaxis, np.newaxis, np.newaxis]
+                    * mem[tet_r4][:, :, np.newaxis, np.newaxis, np.newaxis, np.newaxis]
+                    * react_tensors[2][np.newaxis, :, :, :, :, :],
                     axis=[1, 2, 3, 4],
                 )
             ),
         )
 
-        if impute_bin_HPLC:
-            hplc_impute_binary = sample(
-                "reacts_binary_HPLC_missing",
+        if impute_bin_obs:
+            obs_impute_binary = sample(
+                "reacts_binary_obs_missing",
                 dist.Normal(
-                    loc=1 - bin_doesnt_react[bin_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - bin_doesnt_react[bin_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            bin_HPLC = ops.index_update(
-                bin_HPLC, bin_missing_HPLC, hplc_impute_binary.clip(0.0, 1.0)
+            bin_obs = ops.index_update(
+                bin_obs, bin_missing_obs, obs_impute_binary.clip(0.0, 1.0)
             )
 
-        if impute_tri_HPLC:
-            hplc_impute_ternary = sample(
-                "reacts_ternary_HPLC_missing",
+        if impute_tri_obs:
+            obs_impute_ternary = sample(
+                "reacts_ternary_obs_missing",
                 dist.Normal(
-                    loc=1 - tri_doesnt_react[tri_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - tri_doesnt_react[tri_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            tri_HPLC = ops.index_update(
-                tri_HPLC, tri_missing_HPLC, hplc_impute_ternary.clip(0.0, 1.0)
+            tri_obs = ops.index_update(
+                tri_obs, tri_missing_obs, obs_impute_ternary.clip(0.0, 1.0)
             )
 
-        if impute_tet_HPLC:
-            hplc_impute_quaternary = sample(
-                "reacts_quaternary_HPLC_missing",
+        if impute_tet_obs:
+            obs_impute_quaternary = sample(
+                "reacts_quaternary_obs_missing",
                 dist.Normal(
-                    loc=1 - tet_doesnt_react[tet_missing_HPLC], scale=self.likelihood_sd
+                    loc=1 - tet_doesnt_react[tet_missing_obs], scale=self.likelihood_sd
                 ).mask(False),
             )
-            tet_HPLC = ops.index_update(
-                tet_HPLC, tet_missing_HPLC, hplc_impute_quaternary.clip(0.0, 1.0)
+            tet_obs = ops.index_update(
+                tet_obs, tet_missing_obs, obs_impute_quaternary.clip(0.0, 1.0)
             )
 
-        if impute_bin_NMR:
-            nmr_impute_binary = sample(
-                "reacts_binary_NMR_missing",
-                dist.Normal(
-                    loc=1 - bin_doesnt_react[bin_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            bin_NMR = ops.index_update(
-                bin_NMR, bin_missing_NMR, nmr_impute_binary.clip(0.0, 1.0)
-            )
-
-        if impute_tri_NMR:
-            nmr_impute_ternary = sample(
-                "reacts_ternary_NMR_missing",
-                dist.Normal(
-                    loc=1 - tri_doesnt_react[tri_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            tri_NMR = ops.index_update(
-                tri_NMR, tri_missing_NMR, nmr_impute_ternary.clip(0.0, 1.0)
-            )
-
-        if impute_tet_NMR:
-            nmr_impute_quaternary = sample(
-                "reacts_quaternary_NMR_missing",
-                dist.Normal(
-                    loc=1 - tet_doesnt_react[tet_missing_NMR], scale=self.likelihood_sd
-                ).mask(False),
-            )
-            tet_NMR = ops.index_update(
-                tet_NMR, tet_missing_NMR, nmr_impute_quaternary.clip(0.0, 1.0)
-            )
-
-        nmr_obs_binary = sample(
-            "reacts_binary_NMR",
+        event_obs_binary = sample(
+            "reacts_binary_obs",
             dist.Normal(loc=1 - bin_doesnt_react, scale=self.likelihood_sd),
-            obs=bin_NMR,
+            obs=bin_obs,
         )
 
-        nmr_obs_ternary = sample(
-            "reacts_ternary_NMR",
+        event_obs_ternary = sample(
+            "reacts_ternary_obs",
             dist.Normal(loc=1 - tri_doesnt_react, scale=self.likelihood_sd),
-            obs=tri_NMR,
+            obs=tri_obs,
         )
 
-        nmr_obs_quaternary = sample(
-            "reacts_quaternary_NMR",
+        event_obs_quaternary = sample(
+            "reacts_quaternary_obs",
             dist.Normal(loc=1 - tet_doesnt_react, scale=self.likelihood_sd),
-            obs=tet_NMR,
-        )
-
-        hplc_obs_binary = sample(
-            "reacts_binary_HPLC",
-            dist.Normal(loc=1 - bin_doesnt_react, scale=self.likelihood_sd),
-            obs=bin_HPLC,
-        )
-
-        hplc_obs_ternary = sample(
-            "reacts_ternary_HPLC",
-            dist.Normal(loc=1 - tri_doesnt_react, scale=self.likelihood_sd),
-            obs=tri_HPLC,
-        )
-
-        hplc_obs_quaternary = sample(
-            "reacts_quaternary_HPLC",
-            dist.Normal(loc=1 - tet_doesnt_react, scale=self.likelihood_sd),
-            obs=tet_HPLC,
+            obs=tet_obs,
         )
