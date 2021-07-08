@@ -276,7 +276,7 @@ class NonstructuralModel(Model):
         tet_r1 = tet_facts.compound1.values
         tet_r2 = tet_facts.compound2.values
         tet_r3 = tet_facts.compound3.values
-        tet_r4 = tet_facts.compound3.values
+        tet_r4 = tet_facts.compound4.values
         tet_obs = tet_facts[observation_columns].values
         tet_missing_obs = np.isnan(tet_obs).nonzero()
         impute_tet_obs = impute and tet_missing_obs[0].size > 0
@@ -556,7 +556,7 @@ class StructuralModel(Model):
         tet_r1 = tet_facts.compound1.values
         tet_r2 = tet_facts.compound2.values
         tet_r3 = tet_facts.compound3.values
-        tet_r4 = tet_facts.compound3.values
+        tet_r4 = tet_facts.compound4.values
         tet_obs = tet_facts[observation_columns].values
         tet_missing_obs = np.isnan(tet_obs).nonzero()
         impute_tet_obs = impute and tet_missing_obs[0].size > 0
