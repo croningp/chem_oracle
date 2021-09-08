@@ -62,10 +62,18 @@ class Model:
         N_props: int,
         observe: bool,
         likelihood_sd: float,
+        mem_beta_a: float,
+        mem_beta_b: float,
+        react_beta_a: float,
+        react_beta_b: float,
     ):
         self.N_props = N_props
         self.observe = observe
         self.likelihood_sd = likelihood_sd
+        self.mem_beta_a = mem_beta_a
+        self.mem_beta_b = mem_beta_b
+        self.react_beta_a = react_beta_a
+        self.react_beta_b = react_beta_b
 
         self.N_bin = self.N_props * (self.N_props - 1) // 2
         self.N_tri = self.N_bin * (self.N_props - 2) // 3
@@ -242,11 +250,25 @@ class Model:
 
 
 class NonstructuralModel(Model):
-    def __init__(self, ncompounds, N_props=8, observe=True, likelihood_sd=0.25):
+    def __init__(
+        self,
+        ncompounds,
+        N_props=8,
+        observe=True,
+        likelihood_sd=0.25,
+        mem_beta_a=0.9,
+        mem_beta_b=0.9,
+        react_beta_a=1.0,
+        react_beta_b=3.0,
+    ):
         super().__init__(
             N_props=N_props,
             observe=observe,
             likelihood_sd=likelihood_sd,
+            mem_beta_a=mem_beta_a,
+            mem_beta_b=mem_beta_b,
+            react_beta_a=react_beta_a,
+            react_beta_b=react_beta_b,
         )
         self.ncompounds = ncompounds
 
@@ -283,7 +305,7 @@ class NonstructuralModel(Model):
 
         mem_beta = sample(
             "mem_beta",
-            dist.Beta(0.9, 0.9),
+            dist.Beta(self.mem_beta_a, self.mem_beta_b),
             sample_shape=(self.ncompounds, self.N_props + 1),
         )
         # the first property is non-reactive, so ignore that
@@ -293,7 +315,7 @@ class NonstructuralModel(Model):
 
         reactivities_norm = sample(
             "reactivities_norm",
-            dist.Beta(1.0, 3.0),
+            dist.Beta(self.react_beta_a, self.react_beta_b),
             sample_shape=(N_bin + N_tri + N_tet, N_event),
         )
 
@@ -481,7 +503,6 @@ class NonstructuralModel(Model):
                 tet_obs, tet_missing_obs, obs_impute_quaternary.clip(0.0, 1.0)
             )
 
-        # pdb.set_trace()
 
         event_obs_binary = sample(
             "reacts_binary_obs",
@@ -509,6 +530,8 @@ class StructuralModel(Model):
         N_props=8,
         observe=True,
         likelihood_sd=0.25,
+        mem_beta_a=0.9,
+        mem_beta_b=1.5,
     ):
         """Bayesian reactivity model informed by structural fingerprints.
         TODO: Update docs
@@ -525,6 +548,8 @@ class StructuralModel(Model):
             N_props=N_props,
             observe=observe,
             likelihood_sd=likelihood_sd,
+            mem_beta_a=mem_beta_a,
+            mem_beta_b=mem_beta_b,
         )
 
         self.fingerprints = fingerprint_matrix
@@ -563,7 +588,7 @@ class StructuralModel(Model):
 
         mem_beta = sample(
             "mem_beta",
-            dist.Beta(0.9, 0.9),
+            dist.Beta(self.mem_beta_a, self.mem_beta_b),
             sample_shape=(self.fingerprint_length, self.N_props + 1),
         )
 
@@ -578,7 +603,7 @@ class StructuralModel(Model):
 
         reactivities_norm = sample(
             "reactivities_norm",
-            dist.Beta(1.0, 3.0),
+            dist.Beta(self.react_beta_a, self.react_beta_b),
             sample_shape=(N_bin + N_tri + N_tet, N_event),
         )
 
