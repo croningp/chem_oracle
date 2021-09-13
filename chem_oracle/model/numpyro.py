@@ -173,6 +173,10 @@ class Model:
         else:
             prediction = trace
 
+        event_names = [col for col in facts.columns if col.startswith("event")]
+        avg_names = [f"avg_expected_{event}" for event in event_names]
+        std_names = [f"std_expected_{event}" for event in event_names]
+
         # calculate reactivity for reactions
         bin_avg = 1 - np.mean(prediction["bin_doesnt_react"], axis=0)
         bin_std = np.std(prediction["bin_doesnt_react"], axis=0)
@@ -185,20 +189,21 @@ class Model:
         # remove old disruption values
         new_facts.loc[:, ["reactivity_disruption", "uncertainty_disruption"]] = np.nan
 
-        # update dataframe with calculated reactivities
-        new_facts.loc[
-            new_facts["compound3"] == -1,
-            ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack([bin_avg, bin_std]).T
-        new_facts.loc[
-            (new_facts["compound3"] != -1) & (new_facts["compound4"] == -1),
-            ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack([tri_avg, tri_std]).T
-        new_facts.loc[
-            new_facts["compound4"] != -1,
-            ["avg_expected_reactivity", "std_expected_reactivity"],
-        ] = np.stack([tet_avg, tet_std]).T
+        masks = [
+            new_facts["compound3"] == -1,  # 2-component
+            (new_facts["compound3"] != -1)
+            & (new_facts["compound4"] == -1),  # 3-component
+            new_facts["compound4"] != -1,  # 4-component
+        ]
 
+        # update dataframe with calculated reactivities
+        for mask, (avg, std) in zip(
+            masks, [[bin_avg, bin_std], [tri_avg, tri_std], [tet_avg, tet_std]]
+        ):
+            new_facts.loc[mask, avg_names] = avg
+            new_facts.loc[mask, std_names] = std
+
+        # missings = [mask & ]
         bin_missings = (new_facts["compound3"] == -1) & pd.isna(
             new_facts[f"{method_name}_reactivity"]
         )
@@ -502,7 +507,6 @@ class NonstructuralModel(Model):
             tet_obs = ops.index_update(
                 tet_obs, tet_missing_obs, obs_impute_quaternary.clip(0.0, 1.0)
             )
-
 
         event_obs_binary = sample(
             "reacts_binary_obs",
