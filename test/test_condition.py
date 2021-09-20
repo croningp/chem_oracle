@@ -38,8 +38,8 @@ def mgr(request):
 
 
 def test_disruption(mgr):
-    mgr.model.condition(mgr.reactions_df, trace=mgr.knowledge_trace, differential=True)
-    mgr.model.condition(mgr.reactions_df, trace=mgr.knowledge_trace, differential=False)
+    mgr.model.condition(mgr.reactions_df, trace=mgr.knowledge_trace)
+    mgr.model.condition(mgr.reactions_df, trace=mgr.knowledge_trace)
 
 
 def test_likelihoods(mgr):
