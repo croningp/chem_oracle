@@ -1,18 +1,76 @@
-from copy import deepcopy
-from jax._src.numpy.lax_numpy import isnan
-
 import numpy as np
 import pandas as pd
 
 
-def reactivity_disruption(observations: pd.DataFrame, probabilities: np.ndarray):
+def differential_disruption(
+    observations: pd.DataFrame, reactivities: np.ndarray, method, order: int
+):
+    observations = observations.copy()
+    result = np.zeros(observations.shape[0])
+    for _ in range(order):
+        disruptions = method(observations, reactivities)
+        top = disruptions.argmax()
+        result[top] = disruptions[top]
+        predicted_reactivity = reactivities[:, top].mean(axis=0).round()
+        observations.loc[top] = predicted_reactivity
+        selection = (reactivities[:, top].round() == predicted_reactivity[None, :]).all(
+            axis=-1
+        )
+        reactivities = reactivities[selection]
+        if not reactivities.size or disruptions[top] == 0.0:
+            return result
+    return result
+
+
+def timeline_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
     """
-    Calculate the disruption to the expected outcome of future experiments of
-    upcoming experiments by performing a given experiment.
+    Calculate the disruption to the expected outcome of future experiments
+    by performing a given experiment.
+    """
+    N = reactivities.shape[0]
+    result = np.zeros_like(observations)
+    missing = observations.isna()
+    reactivities = reactivities[:, missing]
+    discrete_outcomes = reactivities.round()
+    expected_outcome = np.median(discrete_outcomes, axis=0).round()
+    expected_matches = (discrete_outcomes == expected_outcome[None, :])
+    num_matches = N - expected_matches.sum(axis=0)
+    result[missing] = num_matches
+
+    return result.sum(axis=-1)
+
+
+def reactivity_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
+    """
+    Calculate the disruption to the expected outcome of future experiments
+    by performing a given experiment.
     """
     missing = observations.isna()
-    res = np.zeros_like(observations)
-    cov = np.abs(np.cov(probabilities[:, missing].T))
-    np.fill_diagonal(cov, 0.0)
-    res[missing] = np.sum(cov, axis=1)
-    return res.sum(axis=1)
+    reactivities = reactivities[:, missing]
+    medians = np.median(reactivities, axis=0)
+    flips = reactivities > medians
+    result = np.zeros_like(observations)
+
+    result[missing] = np.array(
+        [r[f].mean() - r[~f].mean() for r, f in zip(reactivities.T, flips.T)]
+    )
+
+    return np.abs(result).sum(axis=1)
+
+
+def uncertainty_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
+    """
+    Calculate the disruption to the outcome uncertainty of future experiments 
+    by performing a given experiment.
+    """
+    missing = observations.isna()
+    reactivities = reactivities[:, missing]
+    medians = np.median(reactivities, axis=0)
+    flips = reactivities > medians
+    result = np.zeros_like(observations)
+
+    result[missing] = np.array(
+        [r[f].std() - r[~f].std() for r, f in zip(reactivities.T, flips.T)]
+    )
+
+    return np.abs(result).sum(axis=1)

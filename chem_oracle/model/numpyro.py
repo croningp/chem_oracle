@@ -21,7 +21,7 @@ from numpyro.infer.util import Predictive, log_likelihood
 from numpyro.util import set_platform
 
 from ..util import indices
-from .common import reactivity_disruption
+from .common import differential_disruption, reactivity_disruption, timeline_disruption
 
 if not use_cpu:
     # force GPU
@@ -170,18 +170,18 @@ class Model:
             facts["compound4"] != -1,  # 4-component
         ]
 
-        react_probs = np.zeros((n_samples, *(events.shape)))
+        react_preds = np.zeros((n_samples, *(events.shape)))
         for i, mask in enumerate(masks):
-            react_probs[:, mask, ...] = 1 - trace[f"doesnt_react{i+2}"]
+            react_preds[:, mask, ...] = 1 - trace[f"doesnt_react{i+2}"]
 
         likelihoods = self.experiment_likelihoods(facts, trace)
 
         conditioning_df = pd.concat(
             [
-                pd.DataFrame(react_probs.mean(axis=0), columns=event_names).add_prefix(
+                pd.DataFrame(react_preds.mean(axis=0), columns=event_names).add_prefix(
                     "avg_expected_"
                 ),
-                pd.DataFrame(react_probs.std(axis=0), columns=event_names).add_prefix(
+                pd.DataFrame(react_preds.std(axis=0), columns=event_names).add_prefix(
                     "std_expected_"
                 ),
                 pd.DataFrame(likelihoods.mean(axis=0), columns=event_names).add_prefix(
@@ -191,7 +191,12 @@ class Model:
                     "std_likelihood_"
                 ),
                 pd.DataFrame(
-                    reactivity_disruption(events, react_probs), columns=["disruption"]
+                    differential_disruption(events, react_preds, timeline_disruption, order=10),
+                    columns=["disruption"],
+                ),
+                pd.DataFrame(
+                    reactivity_disruption(events, react_preds),
+                    columns=["reactivity_disruption"],
                 ),
             ],
             axis=1,
