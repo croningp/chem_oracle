@@ -33,7 +33,7 @@ def timeline_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
     reactivities = reactivities[:, missing]
     discrete_outcomes = reactivities.round()
     expected_outcome = np.median(discrete_outcomes, axis=0).round()
-    expected_matches = (discrete_outcomes == expected_outcome[None, :])
+    expected_matches = discrete_outcomes == expected_outcome[None, :]
     num_matches = N - expected_matches.sum(axis=0)
     result[missing] = num_matches
 
@@ -52,7 +52,10 @@ def reactivity_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
     result = np.zeros_like(observations)
 
     result[missing] = np.array(
-        [r[f].mean() - r[~f].mean() for r, f in zip(reactivities.T, flips.T)]
+        [
+            np.abs(reactivities[f].mean(axis=0) - reactivities[~f].mean(axis=0)).sum()
+            for f in flips.T
+        ]
     )
 
     return np.abs(result).sum(axis=1)
@@ -60,7 +63,7 @@ def reactivity_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
 
 def uncertainty_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
     """
-    Calculate the disruption to the outcome uncertainty of future experiments 
+    Calculate the disruption to the outcome uncertainty of future experiments
     by performing a given experiment.
     """
     missing = observations.isna()
@@ -70,7 +73,10 @@ def uncertainty_disruption(observations: pd.DataFrame, reactivities: np.ndarray)
     result = np.zeros_like(observations)
 
     result[missing] = np.array(
-        [r[f].std() - r[~f].std() for r, f in zip(reactivities.T, flips.T)]
+        [
+            np.abs(reactivities[f].std(axis=0) - reactivities[~f].std(axis=0)).sum()
+            for f in flips.T
+        ]
     )
 
     return np.abs(result).sum(axis=1)

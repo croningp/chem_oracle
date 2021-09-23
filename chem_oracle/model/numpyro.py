@@ -21,7 +21,7 @@ from numpyro.infer.util import Predictive, log_likelihood
 from numpyro.util import set_platform
 
 from ..util import indices
-from .common import differential_disruption, reactivity_disruption, timeline_disruption
+from .common import differential_disruption, reactivity_disruption, timeline_disruption, uncertainty_disruption
 
 if not use_cpu:
     # force GPU
@@ -195,8 +195,16 @@ class Model:
                     columns=["disruption"],
                 ),
                 pd.DataFrame(
+                    timeline_disruption(events, react_preds),
+                    columns=["timeline_disruption"],
+                ),
+                pd.DataFrame(
                     reactivity_disruption(events, react_preds),
                     columns=["reactivity_disruption"],
+                ),
+                pd.DataFrame(
+                    uncertainty_disruption(events, react_preds),
+                    columns=["uncertainty_disruption"],
                 ),
             ],
             axis=1,
