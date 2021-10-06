@@ -139,7 +139,7 @@ class Model:
 
     def experiment_likelihoods(self, facts: pd.DataFrame, trace: Dict = None):
         trace = trace or self.trace
-        likelihoods = self.log_likelihoods(facts)
+        likelihoods = self.log_likelihoods(facts, trace)
         reaction_likelihoods = [
             likelihoods[k] for k in sorted(likelihoods) if k.startswith("reacts_obs")
         ]
