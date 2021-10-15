@@ -280,7 +280,7 @@ class ExperimentManager:
                 self.should_update = False
             time.sleep(30)
 
-    def update(self, draws=500, tune=500, sample_kwargs={}):
+    def update(self, draws=500, tune=500, sampler_kwargs={}):
         """Update expected reactivities using probabilistic model.
 
         Args:
@@ -295,12 +295,12 @@ class ExperimentManager:
                     self.reactions_df,
                     self.knowledge_trace,
                     draws=draws,
-                    **sample_kwargs,
+                    sampler_kwargs=sampler_kwargs,
                 )
             else:
                 # produce trace from de novo sampling
                 self.model.sample(
-                    self.reactions_df, draws=draws, tune=tune, **sample_kwargs
+                    self.reactions_df, draws=draws, tune=tune, sampler_kwargs=sampler_kwargs
                 )
             self.logger.info("Conditioning on trace ...")
             self.reactions_df = self.model.condition(self.reactions_df)

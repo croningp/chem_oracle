@@ -93,10 +93,11 @@ class Model:
         tune=500,
         model_params=None,
         rng_seed=0,
-        **sampler_params,
+        nuts_kwargs={},
+        sampler_kwargs={},
     ) -> Dict:
-        nuts_kernel = NUTS(self._pyro_model)
-        mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_params)
+        nuts_kernel = NUTS(self._pyro_model, **nuts_kwargs)
+        mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_kwargs)
         rng_key = PRNGKey(rng_seed)
         mcmc.run(
             rng_key,
