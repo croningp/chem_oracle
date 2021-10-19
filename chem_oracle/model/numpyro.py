@@ -3,6 +3,9 @@ import os
 from itertools import permutations
 from typing import Dict
 
+import jax
+from jax.api import pmap
+
 use_cpu = "ORACLE_USECPU" in os.environ
 
 if not use_cpu and "XLA_FLAGS" not in os.environ:
@@ -96,18 +99,21 @@ class Model:
         nuts_kwargs={},
         sampler_kwargs={},
     ) -> Dict:
-        nuts_kernel = NUTS(self._pyro_model, **nuts_kwargs)
-        mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_kwargs)
-        rng_key = PRNGKey(rng_seed)
-        mcmc.run(
-            rng_key,
-            facts,
-            *(model_params or []),
-            extra_fields=("potential_energy",),
-        )
-        self.trace = {**mcmc.get_samples(), **mcmc.get_extra_fields()}
-        # convert trace data to plain old numpy arrays
-        self.trace = {k: np.array(v) for k, v in self.trace.items()}
+        def do_mcmc(rng_key):
+            nuts_kernel = NUTS(self._pyro_model, **nuts_kwargs)
+            mcmc = MCMC(nuts_kernel, num_samples=draws, num_warmup=tune, **sampler_kwargs)
+            mcmc.run(
+                rng_key,
+                facts,
+                *(model_params or []),
+                extra_fields=("potential_energy",),
+            )
+            return {**mcmc.get_samples(), **mcmc.get_extra_fields()}
+        n_parallel = jax.local_device_count()
+        rng_keys = jax.random.split(PRNGKey(rng_seed), n_parallel)
+        results = pmap(do_mcmc)(rng_keys)
+        # concatenate results along pmap'ed axis
+        self.trace = {k: np.concatenate(v) for k, v in results.items()}
         return self.trace
 
     def predict(
@@ -192,7 +198,7 @@ class Model:
                     "std_likelihood_"
                 ),
                 pd.DataFrame(
-                    differential_disruption(events, react_preds, timeline_disruption, order=10),
+                    differential_disruption(events, react_preds, reactivity_disruption, order=3),
                     columns=["disruption"],
                 ),
                 pd.DataFrame(
