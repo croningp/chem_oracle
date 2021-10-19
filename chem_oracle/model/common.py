@@ -3,23 +3,32 @@ import pandas as pd
 
 
 def differential_disruption(
-    observations: pd.DataFrame, reactivities: np.ndarray, method, order: int
+    observations: pd.DataFrame, reactivities: np.ndarray, method, order: int, min_points:int=7
 ):
     observations = observations.copy()
     result = np.zeros(observations.shape[0])
-    for _ in range(order):
-        disruptions = method(observations, reactivities)
-        top = disruptions.argmax()
-        result[top] = disruptions[top]
-        predicted_reactivity = reactivities[:, top].mean(axis=0).round()
-        observations.loc[top] = predicted_reactivity
-        selection = (reactivities[:, top].round() == predicted_reactivity[None, :]).all(
-            axis=-1
-        )
-        reactivities = reactivities[selection]
-        if not reactivities.size or disruptions[top] == 0.0:
-            return result
-    return result
+    if order == 0 or reactivities.shape[0] < min_points:
+        # reached bottom of tree or not enough points to do a partition
+        return result
+        
+    disruptions = method(observations, reactivities)
+    top = disruptions.argmax()
+    result[top] = disruptions[top]
+    predicted_reactivity = np.median(reactivities[:, top], axis=0)
+    observations.loc[top] = predicted_reactivity
+    outcomes = reactivities[:, top] > predicted_reactivity[None, :]
+    cov = np.cov(outcomes.T)
+    pivot = np.abs(cov).sum(axis=1).argmax()
+    flip = cov[pivot, :] < 0
+    consensus = np.logical_xor(outcomes, flip.T)
+    selection_pos = consensus.all(axis=1)
+    selection_neg = ~consensus.any(axis=1)
+    res = np.maximum(
+        result,
+        differential_disruption(observations, reactivities[selection_pos], method, order - 1, min_points),
+        differential_disruption(observations, reactivities[selection_neg], method, order - 1, min_points)
+    )
+    return res
 
 
 def timeline_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
