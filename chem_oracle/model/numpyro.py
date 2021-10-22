@@ -1,4 +1,3 @@
-import pdb
 import os
 from itertools import permutations
 from typing import Dict
@@ -24,7 +23,7 @@ from numpyro.infer.util import Predictive, log_likelihood
 from numpyro.util import set_platform
 
 from ..util import indices
-from .common import differential_disruption, reactivity_disruption, timeline_disruption, uncertainty_disruption
+from .common import reactivity_disruption
 
 if not use_cpu:
     # force GPU
@@ -32,7 +31,9 @@ if not use_cpu:
 
 SAMPLED_RVS = [
     "mem_beta",
-    "reactivities_norm",
+    "reactivities_2",
+    "reactivities_3",
+    "reactivities_4",
 ]
 
 
@@ -66,15 +67,13 @@ class Model:
         likelihood_sd: float,
         mem_beta_a: float,
         mem_beta_b: float,
-        react_beta_a: float,
-        react_beta_b: float,
+        react_a: float,
     ):
         self.N_props = N_props
         self.likelihood_sd = likelihood_sd
         self.mem_beta_a = mem_beta_a
         self.mem_beta_b = mem_beta_b
-        self.react_beta_a = react_beta_a
-        self.react_beta_b = react_beta_b
+        self.react_a = react_a
 
         # Number of _unique_ reactivities for each reaction arity
         self.N_bin = self.N_props * (self.N_props - 1) // 2
@@ -223,16 +222,14 @@ class NonstructuralModel(Model):
         likelihood_sd=0.25,
         mem_beta_a=0.9,
         mem_beta_b=0.9,
-        react_beta_a=1.0,
-        react_beta_b=3.0,
+        react_a=1.0,
     ):
         super().__init__(
             N_props=N_props,
             likelihood_sd=likelihood_sd,
             mem_beta_a=mem_beta_a,
             mem_beta_b=mem_beta_b,
-            react_beta_a=react_beta_a,
-            react_beta_b=react_beta_b,
+            react_a=react_a,
         )
         self.ncompounds = ncompounds
 
@@ -263,16 +260,20 @@ class NonstructuralModel(Model):
         mem = deterministic(
             "mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
         )  # ncompounds x N_props
-
-        reactivities_norm = sample(
-            "reactivities_norm",
-            dist.Beta(self.react_beta_a, self.react_beta_b),
-            sample_shape=(sum(self.N), N_event),
+        
+        reactivities = jnp.concatenate(
+            [
+                sample(
+                    f"reactivities_{i}",
+                    dist.Dirichlet(self.react_a * jnp.ones(n, N_event))
+                )
+                for i, n in zip(range(2, 5), self.N)
+            ]
         )
 
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1, N_event)), reactivities_norm],
+            [jnp.zeros((1, N_event)), reactivities],
         )
 
         react_tensors = [
@@ -454,8 +455,7 @@ class StructuralModel(Model):
         likelihood_sd=0.25,
         mem_beta_a=0.9,
         mem_beta_b=0.9,
-        react_beta_a=1.0,
-        react_beta_b=3.0,
+        react_a=1.0,
     ):
         """Bayesian reactivity model informed by structural fingerprints.
         TODO: Update docs
@@ -473,8 +473,7 @@ class StructuralModel(Model):
             likelihood_sd=likelihood_sd,
             mem_beta_a=mem_beta_a,
             mem_beta_b=mem_beta_b,
-            react_beta_a=react_beta_a,
-            react_beta_b=react_beta_b,
+            react_a=react_a,
         )
         self.fingerprints = fingerprint_matrix
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
@@ -511,16 +510,20 @@ class StructuralModel(Model):
         mem = deterministic(
             "mem", jnp.max(self.fingerprints[..., jnp.newaxis] * fp_mem, axis=1)
         )
-
-        reactivities_norm = sample(
-            "reactivities_norm",
-            dist.Beta(self.react_beta_a, self.react_beta_b),
-            sample_shape=(sum(self.N), N_event),
+        
+        reactivities = jnp.concatenate(
+            [
+                sample(
+                    f"reactivities_{i}",
+                    dist.Dirichlet(self.react_a * jnp.ones(n, N_event))
+                )
+                for i, n in zip(range(2, 5), self.N)
+            ]
         )
 
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1, N_event)), reactivities_norm],
+            [jnp.zeros((1, N_event)), reactivities],
         )
 
         react_tensors = [
