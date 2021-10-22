@@ -198,20 +198,8 @@ class Model:
                     "std_likelihood_"
                 ),
                 pd.DataFrame(
-                    differential_disruption(events, react_preds, reactivity_disruption, order=3),
-                    columns=["disruption"],
-                ),
-                pd.DataFrame(
-                    timeline_disruption(events, react_preds),
-                    columns=["timeline_disruption"],
-                ),
-                pd.DataFrame(
                     reactivity_disruption(events, react_preds),
                     columns=["reactivity_disruption"],
-                ),
-                pd.DataFrame(
-                    uncertainty_disruption(events, react_preds),
-                    columns=["uncertainty_disruption"],
                 ),
             ],
             axis=1,
