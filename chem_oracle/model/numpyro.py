@@ -163,6 +163,7 @@ class Model:
         self,
         facts: pd.DataFrame,
         trace=None,
+        calculate_disruptions=True,
     ) -> pd.DataFrame:
         # calculate reactivity for binary reactions
         trace = trace or self.trace
@@ -182,27 +183,30 @@ class Model:
 
         likelihoods = self.experiment_likelihoods(facts, trace)
 
-        conditioning_df = pd.concat(
-            [
-                pd.DataFrame(react_preds.mean(axis=0), columns=event_names).add_prefix(
-                    "avg_expected_"
-                ),
-                pd.DataFrame(react_preds.std(axis=0), columns=event_names).add_prefix(
-                    "std_expected_"
-                ),
-                pd.DataFrame(likelihoods.mean(axis=0), columns=event_names).add_prefix(
-                    "avg_likelihood_"
-                ),
-                pd.DataFrame(likelihoods.std(axis=0), columns=event_names).add_prefix(
-                    "std_likelihood_"
-                ),
+        conditioning_dfs = [
+            pd.DataFrame(react_preds.mean(axis=0), columns=event_names).add_prefix(
+                "avg_expected_"
+            ),
+            pd.DataFrame(react_preds.std(axis=0), columns=event_names).add_prefix(
+                "std_expected_"
+            ),
+            pd.DataFrame(likelihoods.mean(axis=0), columns=event_names).add_prefix(
+                "avg_likelihood_"
+            ),
+            pd.DataFrame(likelihoods.std(axis=0), columns=event_names).add_prefix(
+                "std_likelihood_"
+            ),
+        ]
+
+        if calculate_disruptions:
+            conditioning_dfs.extend([
                 pd.DataFrame(
                     reactivity_disruption(events, react_preds),
                     columns=["reactivity_disruption"],
-                ),
-            ],
-            axis=1,
-        )
+                )
+            ])
+
+        conditioning_df = pd.concat(conditioning_dfs, axis=1)
 
         return pd.concat(
             [
@@ -265,8 +269,8 @@ class NonstructuralModel(Model):
             [
                 sample(
                     f"reactivities_{i}",
-                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event)))
-                )
+                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event + 1))) # Last event is "no event"
+                )[:, :N_event]
                 for i, n in zip(range(2, 5), self.N)
             ]
         )
@@ -515,8 +519,8 @@ class StructuralModel(Model):
             [
                 sample(
                     f"reactivities_{i}",
-                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event)))
-                )
+                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event + 1))) # Last event is "no event"
+                )[:, :N_event]
                 for i, n in zip(range(2, 5), self.N)
             ]
         )
