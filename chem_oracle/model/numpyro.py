@@ -265,7 +265,7 @@ class NonstructuralModel(Model):
             [
                 sample(
                     f"reactivities_{i}",
-                    dist.Dirichlet(self.react_a * jnp.ones(n, N_event))
+                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event)))
                 )
                 for i, n in zip(range(2, 5), self.N)
             ]
@@ -515,7 +515,7 @@ class StructuralModel(Model):
             [
                 sample(
                     f"reactivities_{i}",
-                    dist.Dirichlet(self.react_a * jnp.ones(n, N_event))
+                    dist.Dirichlet(self.react_a * jnp.ones((n, N_event)))
                 )
                 for i, n in zip(range(2, 5), self.N)
             ]
