@@ -3,7 +3,6 @@ from itertools import permutations
 from typing import Dict
 
 import jax
-from jax.api import pmap
 
 use_cpu = "ORACLE_USECPU" in os.environ
 
@@ -109,10 +108,13 @@ class Model:
             )
             return {**mcmc.get_samples(), **mcmc.get_extra_fields()}
         n_parallel = jax.local_device_count()
-        rng_keys = jax.random.split(PRNGKey(rng_seed), n_parallel)
-        results = pmap(do_mcmc)(rng_keys)
-        # concatenate results along pmap'ed axis
-        self.trace = {k: np.concatenate(v) for k, v in results.items()}
+        if n_parallel > 1:
+            rng_keys = jax.random.split(PRNGKey(rng_seed), n_parallel)
+            results = jax.pmap(do_mcmc)(rng_keys)
+            # concatenate results along pmap'ed axis
+            self.trace = {k: np.concatenate(v) for k, v in results.items()}
+        else:
+            self.trace = dict(do_mcmc(PRNGKey(rng_seed)))
         return self.trace
 
     def predict(
