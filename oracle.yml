@@ -1,0 +1,22 @@
+name: oracle
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.9
+  - pip
+  - ipython
+  - jupyterlab
+  - numpy
+  - matplotlib
+  - scipy
+  - scikit-learn
+  - pandas
+  - seaborn
+  - tensorflow=2.6
+  - wolfv::jaxlib
+  - jax
+  - watchdog
+  - numpyro
+  - rdkit
+  - openpyxl
