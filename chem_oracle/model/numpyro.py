@@ -63,10 +63,10 @@ class Model:
     def __init__(
         self,
         N_props: int,
-        likelihood_sd: float,
-        mem_beta_a: float,
-        mem_beta_b: float,
-        react_a: float,
+        likelihood_sd: float = 0.25,
+        mem_beta_a: float = 0.9,
+        mem_beta_b: float = 0.9,
+        react_a: float = 1.0,
     ):
         self.N_props = N_props
         self.likelihood_sd = likelihood_sd
@@ -433,22 +433,8 @@ class Model:
 
 
 class NonstructuralModel(Model):
-    def __init__(
-        self,
-        ncompounds,
-        N_props=8,
-        likelihood_sd=0.25,
-        mem_beta_a=0.9,
-        mem_beta_b=0.9,
-        react_a=1.0,
-    ):
-        super().__init__(
-            N_props=N_props,
-            likelihood_sd=likelihood_sd,
-            mem_beta_a=mem_beta_a,
-            mem_beta_b=mem_beta_b,
-            react_a=react_a,
-        )
+    def __init__(self, ncompounds, **kwargs):
+        super().__init__(**kwargs)
         self.ncompounds = ncompounds
 
     def mem(self):
@@ -464,15 +450,7 @@ class NonstructuralModel(Model):
 
 
 class StructuralModel(Model):
-    def __init__(
-        self,
-        fingerprint_matrix: np.ndarray,
-        N_props=8,
-        likelihood_sd=0.25,
-        mem_beta_a=0.9,
-        mem_beta_b=0.9,
-        react_a=1.0,
-    ):
+    def __init__(self, fingerprint_matrix: np.ndarray, **kwargs):
         """Bayesian reactivity model informed by structural fingerprints.
         TODO: Update docs
 
@@ -484,13 +462,7 @@ class StructuralModel(Model):
         """
         # """fingerprints: Matrix of Morgan fingerprints for reagents."""
 
-        super().__init__(
-            N_props=N_props,
-            likelihood_sd=likelihood_sd,
-            mem_beta_a=mem_beta_a,
-            mem_beta_b=mem_beta_b,
-            react_a=react_a,
-        )
+        super().__init__(**kwargs)
         self.fingerprints = fingerprint_matrix
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
