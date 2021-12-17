@@ -345,12 +345,12 @@ class Model:
         prediction.update(sampled_vars_trace)
         return prediction
 
-    def sites(self, facts: pd.DataFrame, trace=None) -> Dict:
+    def sites(self, facts: pd.DataFrame, trace=None, impute=False) -> Dict:
         trace = trace or self.trace
         mdl = handlers.substitute(
             self._pyro_model, data={k: v[0] for k, v in trace.items()}
         )
-        return handlers.trace(mdl).get_trace(facts)
+        return handlers.trace(mdl).get_trace(facts, impute=impute)
 
     def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
         trace = trace or self.trace
