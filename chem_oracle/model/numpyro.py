@@ -103,12 +103,7 @@ class Model:
 
         reactivities = jnp.concatenate(
             [
-                sample(
-                    f"reactivities_{i}",
-                    dist.Dirichlet(
-                        self.react_a * jnp.ones((n, N_event + 1))
-                    ),  # Last event is "no event"
-                )[:, :N_event]
+                sample(f"reactivities_{i}", dist.Uniform(), sample_shape=(n, N_event))
                 for i, n in zip(range(2, 5), self.N)
             ]
         )
@@ -447,14 +442,8 @@ class NonstructuralModel(Model):
         self.ncompounds = ncompounds
 
     def mem(self):
-        mem_beta = sample(
-            "mem_beta",
-            dist.Beta(self.mem_beta_a, self.mem_beta_b),
-            sample_shape=(self.ncompounds, self.N_props + 1),
-        )
-        # the first property is non-reactive, so ignore that
-        return deterministic(
-            "mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
+        return sample(
+            "mem", dist.Uniform(), sample_shape=(self.ncompounds, self.N_props)
         )  # ncompounds x N_props
 
 
