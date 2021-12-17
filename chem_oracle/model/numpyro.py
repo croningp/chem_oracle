@@ -20,6 +20,7 @@ from numpyro import deterministic, sample
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.util import Predictive, log_likelihood
 from numpyro.util import set_platform
+from numpyro import handlers as handlers
 
 from ..util import indices
 from .common import reactivity_disruption
@@ -27,13 +28,6 @@ from .common import reactivity_disruption
 if not use_cpu:
     # force GPU
     set_platform("gpu")
-
-SAMPLED_RVS = [
-    "mem_beta",
-    "reactivities_2",
-    "reactivities_3",
-    "reactivities_4",
-]
 
 
 def triangular_indices(N, ndims, shift=0):
@@ -324,7 +318,7 @@ class Model:
             # concatenate results along pmap'ed axis
             self.trace = {k: np.concatenate(v) for k, v in results.items()}
         else:
-            self.trace = dict(do_mcmc(PRNGKey(rng_seed)))
+            self.trace = do_mcmc(PRNGKey(rng_seed))
         return self.trace
 
     def predict(
@@ -336,7 +330,12 @@ class Model:
         **sampler_params,
     ):
         # numpyro chokes on non-sampled vars
-        sampled_vars_trace = {k: knowledge_trace[k] for k in SAMPLED_RVS}
+        sites = self.sites(facts, knowledge_trace)
+        sampled_vars_trace = {
+            k: v
+            for k, v in knowledge_trace.items()
+            if k in sites and sites[k]["type"] == "sample"
+        }
         predictive = Predictive(self._pyro_model, sampled_vars_trace, num_samples=draws)
         prediction = predictive(
             PRNGKey(0), facts, *(model_params or []), **sampler_params
@@ -346,10 +345,20 @@ class Model:
         prediction.update(sampled_vars_trace)
         return prediction
 
+    def sites(self, facts: pd.DataFrame, trace=None) -> Dict:
+        trace = trace or self.trace
+        mdl = handlers.substitute(
+            self._pyro_model, data={k: v[0] for k, v in trace.items()}
+        )
+        return handlers.trace(mdl).get_trace(facts)
+
     def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
         trace = trace or self.trace
+        sites = self.sites(facts, trace)
         trace = {
-            k: v for k, v in trace.items() if k in SAMPLED_RVS
+            k: v
+            for k, v in trace.items()
+            if k in sites and sites[k]["type"] == "sample"
         }  # only keep sampled variables
         return log_likelihood(
             self._pyro_model, trace, facts, False  # do not impute - important!
