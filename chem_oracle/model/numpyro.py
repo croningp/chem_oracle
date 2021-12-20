@@ -58,14 +58,12 @@ class Model:
         self,
         N_props: int,
         likelihood_sd: float = 0.25,
-        mem_beta_a: float = 0.9,
-        mem_beta_b: float = 0.9,
-        react_a: float = 1.0,
+        mem_a: float = 0.4,
+        react_a: float = 0.4,
     ):
         self.N_props = N_props
         self.likelihood_sd = likelihood_sd
-        self.mem_beta_a = mem_beta_a
-        self.mem_beta_b = mem_beta_b
+        self.mem_a = mem_a
         self.react_a = react_a
 
         # Number of _unique_ reactivities for each reaction arity
@@ -101,21 +99,22 @@ class Model:
 
         mem = self.mem()
 
-        reactivities = jnp.concatenate(
-            [
-                sample(
-                    f"reactivities_{i}",
-                    dist.Dirichlet(
-                        self.react_a * jnp.ones((n, N_event + 1))
-                    ),  # Last event is "no event"
-                )[:, :N_event]
-                for i, n in zip(range(2, 5), self.N)
-            ]
-        )
+        reactivities = [
+            sample(
+                f"reactivities_{i}",
+                dist.Dirichlet(
+                    self.react_a * jnp.ones((n, N_event + 1))
+                ),  # Last event is "no event"
+            )
+            for i, n in zip(range(2, 5), self.N)
+        ]
 
         # add zero entry for self-reactivity for each reactivity mode
         reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1, N_event)), reactivities],
+            [jnp.zeros((1, N_event))] +
+            [
+                (r / jnp.max(r, axis=1)[:, None])[:, 1:] for r in reactivities
+            ]
         )
 
         react_tensors = [
@@ -447,14 +446,13 @@ class NonstructuralModel(Model):
         self.ncompounds = ncompounds
 
     def mem(self):
-        mem_beta = sample(
-            "mem_beta",
-            dist.Beta(self.mem_beta_a, self.mem_beta_b),
-            sample_shape=(self.ncompounds, self.N_props + 1),
+        mem_raw = sample(
+            "mem_raw",
+            dist.Dirichlet(self.mem_a * jnp.ones((self.ncompounds, self.N_props + 1))),
         )
         # the first property is non-reactive, so ignore that
         return deterministic(
-            "mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
+            "mem", (mem_raw / jnp.max(mem_raw, axis=1)[:, None])[..., 1:]
         )  # ncompounds x N_props
 
 
@@ -476,15 +474,14 @@ class StructuralModel(Model):
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
     def mem(self):
-        mem_beta = sample(
-            "mem_beta",
-            dist.Beta(self.mem_beta_a, self.mem_beta_b),
-            sample_shape=(self.fingerprint_length, self.N_props + 1),
+        mem_raw = sample(
+            "mem_raw",
+            dist.Dirichlet(self.mem_a * jnp.ones((self.fingerprint_length, self.N_props + 1))),
         )
 
         # the first property is non-reactive, so ignore that
         fp_mem = deterministic(
-            "fp_mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
+            "fp_mem", (mem_raw / jnp.max(mem_raw, axis=1)[:, None])[..., 1:]
         )
 
         return deterministic(
