@@ -10,7 +10,7 @@ from scipy.signal import find_peaks
 
 from hplc_analyze import chemstation
 
-full_lib_old = {
+full_lib_1 = {
     0: [(13.6, 12.0)],
     1: [(3.0, 2.0)],
     2: [(4.0, 2.7)],
@@ -33,7 +33,7 @@ full_lib_old = {
     19: [(3.5, 2.0)],
 }
 
-full_lib = {
+full_lib_2 = {
     0: [(18.7, 18.1)],
     1: [(12.0, 11.4)],
     2: [(3.0, 2.0)],
@@ -60,23 +60,58 @@ full_lib = {
     23: [(3.5, 2.5)],
 }
 
+full_lib_3 = {
+    0: [(8.5, 6.8), (13.7, 13.45), (14.5, 14.2), (18.25, 18.0), (18.75, 18.5)],
+    1: [(18.3, 18.0)],
+    2: [(18.6, 18.0), (19.5, 19.25), (19.9, 19.75)],
+    3: [(18.3, 18.0)],
+    4: [(14.6, 14.15), (13.0, 12.4)],
+    5: [(14.5, 14.25), (12.25, 11.9)],
+    6: [(3.0, 2.7)],
+    7: [(16.0, 12.4)],
+    8: [(13.3, 12.9)],
+    9: [(3.0, 2.0)],
+    10: [(3.0, 2.0)],
+    11: [(3.0, 2.0)],
+}
 
-REAGENTS_FOLDER = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/reagents"
+REAGENTS_FOLDER_1 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
+reagents_files_1 = {
+    i.split("_")[1]: i
+    for i in glob.glob(os.path.join(REAGENTS_FOLDER_1, "reagents", "*_HPLC"))
+    if "BLANK" not in i
+}
 
-reagents = [
-    i for i in glob.glob(os.path.join(REAGENTS_FOLDER, "*_HPLC")) if "BLANK" not in i
-]
+REAGENTS_FOLDER_2 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
+reagents_files_2 = {
+    i.split("_")[1]: i
+    for i in glob.glob(os.path.join(REAGENTS_FOLDER_2, "reagents", "*_HPLC"))
+    if "BLANK" not in i
+}
+
+REAGENTS_FOLDER_3 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data3/"
+reagents_files_3 = {
+    i.split("_")[1]: i
+    for i in glob.glob(os.path.join(REAGENTS_FOLDER_3, "reagents", "*_HPLC"))
+    if "BLANK" not in i
+}
+
+space_manager = {
+    "data": {"reagents": reagents_files_1, "lib": full_lib_1},
+    "data2": {"reagents": reagents_files_2, "lib": full_lib_2},
+    "data3": {"reagents": reagents_files_3, "lib": full_lib_3},
+}
 
 
 def load_hplc(path):
-    file = np.load(path + "/DAD1A.npz")
+    file = np.load(path + "/DAD1A.npz", allow_pickle=True)
     return file["times"], file["values"]
 
 
-def get_reagent_file(n):
-    for i in reagents:
-        if i.split("_")[1] == n or int(i.split("_")[1]) == n:
-            return i
+def get_reagent_file(n, spaceN):
+    n = str(n)
+    reagents = space_manager[spaceN]["reagents"]
+    return reagents[n]
 
 
 def get_reagents(file):
@@ -84,8 +119,8 @@ def get_reagents(file):
     return reagents
 
 
-def get_reagent_chromatogram(reagent_name: str):
-    file = get_reagent_file(reagent_name)
+def get_reagent_chromatogram(reagent_name: str, data_n):
+    file = space_manager[data_n]["reagents"][reagent_name]
     x, y = load_hplc(file)
     spectrum = np.array([x, y]).T
     return spectrum
@@ -95,7 +130,7 @@ def get_spectrum(experiment_dir: str, channel: str = "A"):
     filename = path.join(experiment_dir, "DAD1{}".format(channel))
     npz_file = filename + ".npz"
     if path.exists(npz_file):
-        data = np.load(npz_file)
+        data = np.load(npz_file, allow_pickle=True)
         return np.array([data["times"], data["values"]]).T
     else:
         logging.debug("Not found {}".format(npz_file))
