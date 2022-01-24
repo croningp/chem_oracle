@@ -22,8 +22,6 @@ MAIN_FOLDER = DATA_HOME
 REAGENTS_FOLDER = os.path.join(DATA_HOME, "reagents")
 
 
-name_list = pd.read_excel(os.path.join(MAIN_FOLDER, "data3.xlsx"), engine="openpyxl")
-
 ms_lib = {
     0: (56.0, 42.0, 83.0),
     1: (101.0, 71.0, 42.0, 118.0, 159.0),
@@ -278,6 +276,10 @@ class ProcessMS:
             self.nmr_reactivity = nmr_process(
                 folder=name_to_nmr(self.s), model=DEFAULT_MODEL
             )
+
+    def masses_in_region(self, start, end):
+        peak_mass, *_ = extract_peaks(self.spec, start, end)
+        return peak_mass
 
     def remove_known_masses(self):
         """

@@ -75,31 +75,11 @@ full_lib_3 = {
     11: [(3.0, 2.0)],
 }
 
-REAGENTS_FOLDER_1 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data/"
-reagents_files_1 = {
-    i.split("_")[1]: i
-    for i in glob.glob(os.path.join(REAGENTS_FOLDER_1, "reagents", "*_HPLC"))
-    if "BLANK" not in i
-}
-
-REAGENTS_FOLDER_2 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data2/"
-reagents_files_2 = {
-    i.split("_")[1]: i
-    for i in glob.glob(os.path.join(REAGENTS_FOLDER_2, "reagents", "*_HPLC"))
-    if "BLANK" not in i
-}
-
-REAGENTS_FOLDER_3 = "/mnt/scapa4/group/Hessam Mehr/Data/Discovery/data3/"
-reagents_files_3 = {
-    i.split("_")[1]: i
-    for i in glob.glob(os.path.join(REAGENTS_FOLDER_3, "reagents", "*_HPLC"))
-    if "BLANK" not in i
-}
 
 space_manager = {
-    "data": {"reagents": reagents_files_1, "lib": full_lib_1},
-    "data2": {"reagents": reagents_files_2, "lib": full_lib_2},
-    "data3": {"reagents": reagents_files_3, "lib": full_lib_3},
+    "data": full_lib_1,
+    "data2": full_lib_2,
+    "data3": full_lib_3,
 }
 
 
@@ -119,11 +99,6 @@ def get_reagents(file):
     return reagents
 
 
-def get_reagent_chromatogram(reagent_name: str, data_n):
-    file = space_manager[data_n]["reagents"][reagent_name]
-    x, y = load_hplc(file)
-    spectrum = np.array([x, y]).T
-    return spectrum
 
 
 def get_spectrum(experiment_dir: str, channel: str = "A"):
@@ -158,18 +133,6 @@ def makelib(
     spectra, regions
 ):  # makes a list of regions [[[points of region],start,end],[points of region],start,end]], [...]] for all reagents
     return [[region(s, r) for r in regions[i]] for (i, s) in enumerate(spectra)]
-
-
-def get_exp_stuff(file):
-    spec = get_spectrum(file)
-    if min(spec[:, 1]) > 0:
-        spec[:, 1] = spec[:, 1] - min(spec[:, 1])  # correct the baseline
-    reagents_names = get_reagents(file)
-    if reagents_names == []:
-        return False, spec
-    reagents_spec = [get_reagent_chromatogram(name) for name in reagents_names]
-    lib = makelib(reagents_spec, [full_lib[int(name)] for name in reagents_names])
-    return lib, spec
 
 
 def adjusted(region, shift):
@@ -267,42 +230,70 @@ def apply_filter(spec, filt):
     result = spec * filt
     return result
 
+class SpaceManager:
+    def __init__(self, folder, data_n):
+        self.folder = folder
+        self.data_n = data_n
+        
+        self.reagents_files = {
+            i.split("_")[1]: i
+            for i in glob.glob(os.path.join(self.folder, "reagents", "*_HPLC"))
+            if "BLANK" not in i
+        
+}
 
-def filter_spectrum(file):
-    """
-    Removes the reagent peaks from the HPLC spectrum
-    returns:
-    spec: original HPLC spectrum
-    diff: spectrum without reagents peaks
-    recon: reconstructed spectrum made with sum of reagents, shifted to adapt to mixture
-    filt: 0/1 mask made from recon, to apply on spec to get diff
-    """
-    lib, spec = get_exp_stuff(file)
-    if not lib:
-        print(file + ": Reagents dont have spectra")
-        return spec, spec[:, 1], spec[:, 1], np.zeros(len(spec[:, 1]))
-    res = make_annealing(spec[:, 1], lib)
-    recon = from_x_to_spec(res, lib, spec)
-    filt = from_recon_to_filter(recon)
-    diff = apply_filter(spec[:, 1], filt)
-    return spec, diff, recon, filt
+    def filter_spectrum(self, file):
+        """
+        Removes the reagent peaks from the HPLC spectrum
+        returns:
+        spec: original HPLC spectrum
+        diff: spectrum without reagents peaks
+        recon: reconstructed spectrum made with sum of reagents, shifted to adapt to mixture
+        filt: 0/1 mask made from recon, to apply on spec to get diff
+        """
+        lib, spec = self.get_exp_stuff(file)
+        if not lib:
+            print(file + ": Reagents dont have spectra")
+            return spec, spec[:, 1], spec[:, 1], np.zeros(len(spec[:, 1]))
+        res = make_annealing(spec[:, 1], lib)
+        recon = from_x_to_spec(res, lib, spec)
+        filt = from_recon_to_filter(recon)
+        diff = apply_filter(spec[:, 1], filt)
+        return spec, diff, recon, filt
+    
+    def get_reagent_chromatogram(self, reagent_name):
+
+        file = self.reagents_files[reagent_name]
+        x, y = load_hplc(file)
+        spectrum = np.array([x, y]).T
+        return spectrum
+
+    def get_exp_stuff(self, file):
+        spec = get_spectrum(file)
+        if min(spec[:, 1]) > 0:
+            spec[:, 1] = spec[:, 1] - min(spec[:, 1])  # correct the baseline
+        reagents_names = get_reagents(file)
+        if reagents_names == []:
+            return False, spec
+        reagents_spec = [self.get_reagent_chromatogram(name) for name in reagents_names]
+        lib = makelib(reagents_spec, [space_manager[self.data_n][int(name)] for name in reagents_names])
+        return lib, spec
+
+    def hplc_process(self,file):
+        original, diff, recon, filt = self.filter_spectrum(file)
+        new_peaks = find_peaks(diff / max(recon), height=0.4)
+        return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 15 else 1.0
 
 
-def hplc_process(file):
-    original, diff, recon, filt = filter_spectrum(file)
-    new_peaks = find_peaks(diff / max(recon), height=0.4)
-    return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 15 else 1.0
-
-
-def filter_and_plot(file):
-    original, diff, recon, filt = filter_spectrum(file)
-    fig = plt.figure(figsize=(20, 5))
-    plt.plot(original[:, 1] * 1.2, c="blue")
-    plt.plot([-50 if i == 0 else 1 for i in filt], c="green")
-    plt.plot(diff, c="red")
-    # plt.plot(recon, c='green')
-    plt.title(file)
-    plt.show()
+    def filter_and_plot(self, file):
+        original, diff, recon, filt = self.filter_spectrum(file)
+        fig = plt.figure(figsize=(20, 5))
+        plt.plot(original[:, 1] * 1.2, c="blue")
+        plt.plot([-50 if i == 0 else 1 for i in filt], c="green")
+        plt.plot(diff, c="red")
+        # plt.plot(recon, c='green')
+        plt.title(file)
+        plt.show()
 
 
 if __name__ == "__main__":
