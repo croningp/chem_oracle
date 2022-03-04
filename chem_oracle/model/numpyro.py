@@ -4,11 +4,6 @@ from typing import Dict
 
 import jax
 
-use_cpu = "ORACLE_USECPU" in os.environ
-
-if not use_cpu and "XLA_FLAGS" not in os.environ:
-    os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/opt/cuda"
-
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -19,15 +14,10 @@ import numpyro.distributions as dist
 from numpyro import deterministic, sample
 from numpyro.infer import MCMC, NUTS
 from numpyro.infer.util import Predictive, log_likelihood
-from numpyro.util import set_platform
 from numpyro import handlers as handlers
 
 from ..util import indices
 from .common import reactivity_disruption
-
-if not use_cpu:
-    # force GPU
-    set_platform("gpu")
 
 
 def triangular_indices(N, ndims, shift=0):
@@ -83,7 +73,6 @@ class Model:
 
     def _pyro_model(self, facts, impute=True):
         observation_columns = [col for col in facts.columns if col.startswith("event")]
-        N_event = len(observation_columns)
 
         fact_sets = [
             facts.query("compound3 == -1"),  # 2-component
@@ -95,7 +84,9 @@ class Model:
             for i, fact_set in enumerate(fact_sets)
         ]
 
-        obs = [fact_set[observation_columns].values for fact_set in fact_sets]
+        obs = [
+            fact_set[observation_columns].values.sum(axis=1) for fact_set in fact_sets
+        ]
         missing_obs = [np.isnan(o).nonzero() for o in obs]
         should_imputes = [impute and mo[0].size > 0 for mo in missing_obs]
 
@@ -103,64 +94,49 @@ class Model:
 
         reactivities = jnp.concatenate(
             [
-                sample(
-                    f"reactivities_{i}",
-                    dist.Dirichlet(
-                        self.react_a * jnp.ones((n, N_event + 1))
-                    ),  # Last event is "no event"
-                )[:, :N_event]
+                sample(f"reactivities{i}", dist.Uniform(sample_shape=n))
                 for i, n in zip(range(2, 5), self.N)
             ]
         )
 
-        # add zero entry for self-reactivity for each reactivity mode
-        reactivities_with_zero = jnp.concatenate(
-            [jnp.zeros((1, N_event)), reactivities],
-        )
-
         react_tensors = [
-            deterministic(f"react_tensor{i+2}", reactivities_with_zero[idx, :])
+            deterministic(f"react_tensor{i+2}", reactivities[idx, :])
             for i, idx in enumerate(self.reactivity_indices)
         ]
 
-        doesnt_react = [
+        reacts = [
             deterministic(
-                "doesnt_react2",
-                jnp.prod(
-                    1
-                    - mem[reactants[0][0]][:, :, np.newaxis, np.newaxis]
+                "reacts2",
+                jnp.sum(
+                    mem[reactants[0][0]][:, :, np.newaxis, np.newaxis]
                     * mem[reactants[0][1]][:, np.newaxis, :, np.newaxis]
                     * react_tensors[0][np.newaxis, :, :, :],
                     axis=[1, 2],
                 ),
             ),
             deterministic(
-                "doesnt_react3",
+                "react3",
                 (
-                    jnp.prod(
-                        1
-                        - mem[reactants[1][0]][:, :, np.newaxis, np.newaxis]
+                    jnp.sum(
+                        mem[reactants[1][0]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[1][1]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[1][0]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[1][0]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[1][2]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[1][1]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[1][1]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[1][2]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[1][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[1][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
                         * mem[reactants[1][1]][:, np.newaxis, :, np.newaxis, np.newaxis]
                         * mem[reactants[1][2]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[1][np.newaxis, :, :, :, :],
@@ -169,85 +145,74 @@ class Model:
                 ),
             ),
             deterministic(
-                "doesnt_react4",
+                "react4",
                 (
-                    jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
+                    jnp.sum(
+                        mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][1]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][2]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][0]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][1]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][1]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][2]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][1]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][1]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][2]][:, :, np.newaxis, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][2]][:, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, np.newaxis, :, np.newaxis]
                         * react_tensors[0][np.newaxis, :, :, :],
                         axis=[1, 2],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
                         * mem[reactants[2][1]][:, np.newaxis, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][2]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[1][np.newaxis, :, :, :, :],
                         axis=[1, 2, 3],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
                         * mem[reactants[2][1]][:, np.newaxis, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[1][np.newaxis, :, :, :, :],
                         axis=[1, 2, 3],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][0]][:, np.newaxis, np.newaxis, :, np.newaxis]
                         * mem[reactants[2][2]][:, np.newaxis, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[1][np.newaxis, :, :, :, :],
                         axis=[1, 2, 3],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][1]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                    + jnp.sum(
+                        mem[reactants[2][1]][:, np.newaxis, np.newaxis, :, np.newaxis]
                         * mem[reactants[2][2]][:, np.newaxis, :, np.newaxis, np.newaxis]
                         * mem[reactants[2][3]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[1][np.newaxis, :, :, :, :],
                         axis=[1, 2, 3],
                     )
-                    * jnp.prod(
-                        1
-                        - mem[reactants[2][0]][
+                    + jnp.sum(
+                        mem[reactants[2][0]][
                             :, np.newaxis, np.newaxis, np.newaxis, :, np.newaxis
                         ]
                         * mem[reactants[2][1]][
@@ -270,19 +235,16 @@ class Model:
             if should_impute:
                 obs_impute = sample(
                     f"reacts_obs_missing{i+2}",
-                    dist.Normal(
-                        loc=1 - doesnt_react[i][missing_obs[i]],
-                        scale=self.likelihood_sd,
+                    dist.Poisson(
+                        rate=reacts[i][missing_obs[i]],
                     ).mask(False),
                 )
-                obs[i] = ops.index_update(
-                    obs[i], missing_obs[i], obs_impute.clip(0.0, 1.0)
-                )
+                obs[i] = ops.index_update(obs[i], missing_obs[i], obs_impute)
 
         event_obs = [
             sample(
                 f"reacts_obs{i+2}",
-                dist.Normal(loc=1 - doesnt_react[i], scale=self.likelihood_sd),
+                dist.Poisson(rate=1 - reacts[i]),
                 obs=o,
             )
             for i, o in enumerate(obs)
@@ -449,8 +411,10 @@ class NonstructuralModel(Model):
     def mem(self):
         mem_beta = sample(
             "mem_beta",
-            dist.Beta(self.mem_beta_a, self.mem_beta_b),
-            sample_shape=(self.ncompounds, self.N_props + 1),
+            dist.Beta(
+                self.mem_beta_a * jnp.ones((self.ncompounds, self.N_props)),
+                self.mem_beta_b * jnp.ones((self.ncompounds, self.N_props)),
+            ),
         )
         # the first property is non-reactive, so ignore that
         return deterministic(
@@ -461,7 +425,6 @@ class NonstructuralModel(Model):
 class StructuralModel(Model):
     def __init__(self, fingerprint_matrix: np.ndarray, **kwargs):
         """Bayesian reactivity model informed by structural fingerprints.
-        TODO: Update docs
 
         Args:
             fingerprint_matrix (n_compounds × fingerprint_length matrix):
