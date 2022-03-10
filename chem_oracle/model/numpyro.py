@@ -100,8 +100,12 @@ class Model:
             ]
         )
 
+        reactivities_with_zero = jnp.concatenate(
+            [jnp.zeros((1,)), reactivities],
+        )
+
         react_tensors = [
-            deterministic(f"react_tensor{i+2}", reactivities[idx])
+            deterministic(f"react_tensor{i+2}", reactivities_with_zero[idx])
             for i, idx in enumerate(self.reactivity_indices)
         ]
 
