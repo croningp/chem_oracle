@@ -48,16 +48,12 @@ class Model:
     def __init__(
         self,
         N_props: int,
-        likelihood_sd: float = 0.25,
         mem_beta_a: float = 0.9,
         mem_beta_b: float = 0.9,
-        react_a: float = 1.0,
     ):
         self.N_props = N_props
-        self.likelihood_sd = likelihood_sd
         self.mem_beta_a = mem_beta_a
         self.mem_beta_b = mem_beta_b
-        self.react_a = react_a
 
         # Number of _unique_ reactivities for each reaction arity
         self.N_bin = self.N_props * (self.N_props - 1) // 2
