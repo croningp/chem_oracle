@@ -67,7 +67,7 @@ def reactivity_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
         ]
     )
 
-    return np.abs(result).sum(axis=1)
+    return np.abs(result)
 
 
 def uncertainty_disruption(observations: pd.DataFrame, reactivities: np.ndarray):

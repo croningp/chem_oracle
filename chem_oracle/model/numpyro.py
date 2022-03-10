@@ -72,7 +72,7 @@ class Model:
             for i in range(len(self.N))
         ]
 
-    def _pyro_model(self, facts, impute=True):
+    def _pyro_model(self, facts):
         observation_columns = [col for col in facts.columns if col.startswith("event")]
 
         fact_sets = [
@@ -86,10 +86,14 @@ class Model:
         ]
 
         obs = [
-            fact_set[observation_columns].dropna().values.sum(axis=1) for fact_set in fact_sets
+            fact_set[observation_columns].sum(axis=1) for fact_set in fact_sets
         ]
-        missing_obs = [np.isnan(o).nonzero() for o in obs]
-        should_imputes = [impute and mo[0].size > 0 for mo in missing_obs]
+        
+        present_inds = [(~np.isnan(o.values)).nonzero() for o in obs]
+
+        obs = [
+            o.dropna().values for o in obs
+        ]
 
         mem = self.mem()
 
@@ -232,24 +236,13 @@ class Model:
             ),
         ]
 
-        for i, should_impute in enumerate(should_imputes):
-            if should_impute:
-                obs_impute = sample(
-                    f"reacts_obs_missing{i+2}",
-                    dist.Poisson(
-                        rate=reacts[i][missing_obs[i]],
-                    ).mask(False),
-                )
-                obs[i] = ops.index_update(obs[i], missing_obs[i], obs_impute)
-
-        # pdb.set_trace()
         event_obs = [
             sample(
                 f"reacts_obs{i+2}",
-                dist.Poisson(rate=reacts[i]),
+                dist.Poisson(rate=reacts[i][present_inds[i]]),
                 obs=o,
             )
-            for i, o in enumerate(obs) if o.size
+            for i, o in enumerate(obs)
         ]
 
     def sample(
@@ -309,12 +302,12 @@ class Model:
         prediction.update(sampled_vars_trace)
         return prediction
 
-    def sites(self, facts: pd.DataFrame, trace=None, impute=False) -> Dict:
+    def sites(self, facts: pd.DataFrame, trace=None) -> Dict:
         trace = trace or self.trace
         mdl = handlers.substitute(
             self._pyro_model, data={k: v[0] for k, v in trace.items()}
         )
-        return handlers.trace(mdl).get_trace(facts, impute=impute)
+        return handlers.trace(mdl).get_trace(facts)
 
     def log_likelihoods(self, facts: pd.DataFrame, trace: Dict = None) -> Dict:
         trace = trace or self.trace
@@ -325,7 +318,7 @@ class Model:
             if k in sites and sites[k]["type"] == "sample"
         }  # only keep sampled variables
         return log_likelihood(
-            self._pyro_model, trace, facts, False  # do not impute - important!
+            self._pyro_model, trace, facts
         )
 
     def experiment_likelihoods(self, facts: pd.DataFrame, trace: Dict = None):
@@ -354,7 +347,7 @@ class Model:
         trace = trace or self.trace
 
         event_names = [col for col in facts.columns if col.startswith("event")]
-        events = facts[event_names]
+        events = facts[event_names].sum(axis=1, skipna=False)
         n_samples = len(trace["mem"])
         masks = [
             facts["compound3"] == -1,  # 2-component
@@ -364,23 +357,15 @@ class Model:
 
         react_preds = np.zeros((n_samples, *(events.shape)))
         for i, mask in enumerate(masks):
-            react_preds[:, mask, ...] = 1 - trace[f"doesnt_react{i+2}"]
+            react_preds[:, mask, ...] = trace[f"reacts{i+2}"]
 
         likelihoods = self.experiment_likelihoods(facts, trace)
 
         conditioning_dfs = [
-            pd.DataFrame(react_preds.mean(axis=0), columns=event_names).add_prefix(
-                "avg_expected_"
-            ),
-            pd.DataFrame(react_preds.std(axis=0), columns=event_names).add_prefix(
-                "std_expected_"
-            ),
-            pd.DataFrame(likelihoods.mean(axis=0), columns=event_names).add_prefix(
-                "avg_likelihood_"
-            ),
-            pd.DataFrame(likelihoods.std(axis=0), columns=event_names).add_prefix(
-                "std_likelihood_"
-            ),
+            pd.DataFrame(react_preds.mean(axis=0), columns=["avg_expected"]),
+            pd.DataFrame(react_preds.std(axis=0), columns=["std_expected"]),
+            pd.DataFrame(likelihoods.mean(axis=0), columns=["avg_likelihood"]),
+            pd.DataFrame(likelihoods.std(axis=0), columns=["std_likelihood"]),
         ]
 
         if calculate_disruptions:
