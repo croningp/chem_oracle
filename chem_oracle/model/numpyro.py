@@ -405,7 +405,7 @@ class NonstructuralModel(Model):
         )
         # the first property is non-reactive, so ignore that
         return deterministic(
-            "mem", stick_breaking(mem_beta, normalize=True)
+            "mem", stick_breaking(mem_beta, normalize=False)
         )  # ncompounds x N_props
 
 
