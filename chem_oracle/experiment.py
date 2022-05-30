@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from chem_oracle import util
-from chem_oracle.model.numpyro import NonstructuralModel, StructuralModel
+from chem_oracle.model import NonstructuralModel, StructuralModel
 from chem_oracle.util import morgan_matrix, rdkit_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
@@ -300,7 +300,10 @@ class ExperimentManager:
             else:
                 # produce trace from de novo sampling
                 self.model.sample(
-                    self.reactions_df, draws=draws, tune=tune, sampler_kwargs=sampler_kwargs
+                    self.reactions_df,
+                    draws=draws,
+                    tune=tune,
+                    sampler_kwargs=sampler_kwargs,
                 )
             self.logger.info("Conditioning on trace ...")
             self.reactions_df = self.model.condition(self.reactions_df)

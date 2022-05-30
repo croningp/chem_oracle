@@ -17,8 +17,7 @@ from numpyro.infer import MCMC, NUTS
 from numpyro.infer.util import Predictive, log_likelihood
 from numpyro import handlers as handlers
 
-from ..util import indices
-from .common import reactivity_disruption
+from chem_oracle.util import indices
 
 
 def triangular_indices(N, ndims, shift=0):
@@ -81,15 +80,11 @@ class Model:
             for i, fact_set in enumerate(fact_sets)
         ]
 
-        obs = [
-            fact_set[observation_columns].sum(axis=1) for fact_set in fact_sets
-        ]
-        
+        obs = [fact_set[observation_columns].sum(axis=1) for fact_set in fact_sets]
+
         present_inds = [(~np.isnan(o.values)).nonzero() for o in obs]
 
-        obs = [
-            o.dropna().values for o in obs
-        ]
+        obs = [o.dropna().values for o in obs]
 
         mem = self.mem()
 
@@ -186,7 +181,7 @@ class Model:
                         mem[reactants[2][2]][:, :, np.newaxis]
                         * mem[reactants[2][3]][:, np.newaxis, :]
                         * react_tensors[0][np.newaxis, :, :],
-                        axis=[1,2],
+                        axis=[1, 2],
                     )
                     + jnp.sum(
                         mem[reactants[2][0]][:, np.newaxis, np.newaxis, :]
@@ -217,18 +212,10 @@ class Model:
                         axis=[1, 2, 3],
                     )
                     + jnp.sum(
-                        mem[reactants[2][0]][
-                            :, np.newaxis, np.newaxis, np.newaxis, :
-                        ]
-                        * mem[reactants[2][1]][
-                            :, np.newaxis, np.newaxis, :, np.newaxis
-                        ]
-                        * mem[reactants[2][2]][
-                            :, np.newaxis, :, np.newaxis, np.newaxis
-                        ]
-                        * mem[reactants[2][3]][
-                            :, :, np.newaxis, np.newaxis, np.newaxis
-                        ]
+                        mem[reactants[2][0]][:, np.newaxis, np.newaxis, np.newaxis, :]
+                        * mem[reactants[2][1]][:, np.newaxis, np.newaxis, :, np.newaxis]
+                        * mem[reactants[2][2]][:, np.newaxis, :, np.newaxis, np.newaxis]
+                        * mem[reactants[2][3]][:, :, np.newaxis, np.newaxis, np.newaxis]
                         * react_tensors[2][np.newaxis, :, :, :, :],
                         axis=[1, 2, 3, 4],
                     )
@@ -317,9 +304,7 @@ class Model:
             for k, v in trace.items()
             if k in sites and sites[k]["type"] == "sample"
         }  # only keep sampled variables
-        return log_likelihood(
-            self._pyro_model, trace, facts
-        )
+        return log_likelihood(self._pyro_model, trace, facts)
 
     def experiment_likelihoods(self, facts: pd.DataFrame, trace: Dict = None):
         trace = trace or self.trace
@@ -440,3 +425,100 @@ class StructuralModel(Model):
         return deterministic(
             "mem", jnp.max(self.fingerprints[..., jnp.newaxis] * fp_mem, axis=1)
         )
+
+
+def differential_disruption(
+    observations: pd.DataFrame,
+    reactivities: np.ndarray,
+    method,
+    order: int,
+    min_points: int = 7,
+):
+    observations = observations.copy()
+    result = np.zeros(observations.shape[0])
+    if order == 0 or reactivities.shape[0] < min_points:
+        # reached bottom of tree or not enough points to do a partition
+        return result
+
+    disruptions = method(observations, reactivities)
+    top = disruptions.argmax()
+    result[top] = disruptions[top]
+    predicted_reactivity = np.median(reactivities[:, top], axis=0)
+    observations.loc[top] = predicted_reactivity
+    outcomes = reactivities[:, top] > predicted_reactivity[None, :]
+    cov = np.cov(outcomes.T)
+    pivot = np.abs(cov).sum(axis=1).argmax()
+    flip = cov[pivot, :] < 0
+    consensus = np.logical_xor(outcomes, flip.T)
+    selection_pos = consensus.all(axis=1)
+    selection_neg = ~consensus.any(axis=1)
+    res = np.maximum(
+        result,
+        differential_disruption(
+            observations, reactivities[selection_pos], method, order - 1, min_points
+        ),
+        differential_disruption(
+            observations, reactivities[selection_neg], method, order - 1, min_points
+        ),
+    )
+    return res
+
+
+def timeline_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
+    """
+    Calculate the disruption to the expected outcome of future experiments
+    by performing a given experiment.
+    """
+    N = reactivities.shape[0]
+    result = np.zeros_like(observations)
+    missing = observations.isna()
+    reactivities = reactivities[:, missing]
+    discrete_outcomes = reactivities.round()
+    expected_outcome = np.median(discrete_outcomes, axis=0).round()
+    expected_matches = discrete_outcomes == expected_outcome[None, :]
+    num_matches = N - expected_matches.sum(axis=0)
+    result[missing] = num_matches
+
+    return result.sum(axis=-1)
+
+
+def reactivity_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
+    """
+    Calculate the disruption to the expected outcome of future experiments
+    by performing a given experiment.
+    """
+    missing = observations.isna()
+    reactivities = reactivities[:, missing]
+    medians = np.median(reactivities, axis=0)
+    flips = reactivities > medians
+    result = np.zeros_like(observations)
+
+    result[missing] = np.array(
+        [
+            np.abs(reactivities[f].mean(axis=0) - reactivities[~f].mean(axis=0)).sum()
+            for f in flips.T
+        ]
+    )
+
+    return np.abs(result)
+
+
+def uncertainty_disruption(observations: pd.DataFrame, reactivities: np.ndarray):
+    """
+    Calculate the disruption to the outcome uncertainty of future experiments
+    by performing a given experiment.
+    """
+    missing = observations.isna()
+    reactivities = reactivities[:, missing]
+    medians = np.median(reactivities, axis=0)
+    flips = reactivities > medians
+    result = np.zeros_like(observations)
+
+    result[missing] = np.array(
+        [
+            np.abs(reactivities[f].std(axis=0) - reactivities[~f].std(axis=0)).sum()
+            for f in flips.T
+        ]
+    )
+
+    return np.abs(result).sum(axis=1)
