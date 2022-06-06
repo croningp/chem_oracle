@@ -4,7 +4,7 @@ from typing import Iterable, List
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, Draw
+from rdkit.Chem import AllChem, Draw, MACCSkeys
 
 
 def indices(N: int, ndims: int, allow_repeat=False) -> np.ndarray:
@@ -47,6 +47,9 @@ def rdkit_bits(smiles: str, minpath: int, maxpath: int, nbits: int) -> np.ndarra
     result[rdkit_fp.GetOnBits()] = 1.0
     return result
 
+def maccs_matrix(mols: Iterable[str]):
+    return np.array([MACCSkeys.GenMACCSKeys(mol) for mol in mols])
+    
 
 def morgan_matrix(mols: Iterable[str], radius: int, nbits: int):
     return np.stack([morgan_bits(mol, radius, nbits) for mol in mols])
