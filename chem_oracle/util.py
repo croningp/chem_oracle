@@ -3,6 +3,7 @@ from os import path
 from typing import Iterable, List
 
 import numpy as np
+import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, Draw, MACCSkeys
 
@@ -86,3 +87,22 @@ def fingerprint_motifs(mol, radius, nbits):
         ]
         for bit in bitset
     }
+
+
+def unique_reactions(df: pd.DataFrame, compound_cols, event_names):
+    lookup = df.reset_index().set_index(compound_cols)
+    for cmp in lookup.index:
+        sub_combinations = []
+        for size in range(2, len([i for i in cmp if i != -1])):
+            for comb in itertools.combinations(cmp, size):
+                if -1 not in comb:
+                    comb = comb + (-1,) * (len(cmp) - len(comb))
+                    sub_combinations.append(comb)
+        sub_reactions = lookup.loc[sub_combinations, event_names].dropna()
+        if sub_reactions.empty:
+            continue
+        lookup.loc[cmp, event_names] = (
+            lookup.loc[cmp, event_names] - sub_reactions.max(axis=0)
+        ).clip(lower=0.0)
+
+    return lookup.reset_index().set_index("index")
