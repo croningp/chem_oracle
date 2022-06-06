@@ -65,7 +65,7 @@ class Model:
             for i in range(len(self.N))
         ]
 
-    def _pyro_model(self, facts: pd.DataFrame):
+    def _pyro_model(self, facts: pd.DataFrame, observe=True):
         compounds = [col for col in facts.columns if col.startswith("compound")]
         observation_columns = [col for col in facts.columns if col.startswith("event")]
         facts = util.unique_reactions(facts, compounds, observation_columns)
@@ -139,14 +139,23 @@ class Model:
             ),
         ]
 
-        event_obs = [
-            sample(
-                f"reacts_obs{i+2}",
-                dist.Poisson(rate=reacts[i][present_inds[i]]),
-                obs=o,
-            )
-            for i, o in enumerate(obs)
-        ]
+        if observe:
+            event_obs = [
+                sample(
+                    f"reacts_obs{i+2}",
+                    dist.Poisson(rate=reacts[i][present_inds[i]]),
+                    obs=o,
+                )
+                for i, o in enumerate(obs)
+            ]
+        else:
+            event_obs = [
+                sample(
+                    f"reacts_obs{i+2}",
+                    dist.Poisson(rate=reacts[i][present_inds[i]]),
+                )
+                for i, o in enumerate(obs)
+            ]
 
     def sample(
         self,
@@ -197,9 +206,7 @@ class Model:
             if k in sites and sites[k]["type"] == "sample"
         }
         predictive = Predictive(self._pyro_model, sampled_vars_trace, num_samples=draws)
-        prediction = predictive(
-            PRNGKey(0), facts, *(model_params or []), **sampler_params
-        )
+        prediction = predictive(PRNGKey(0), facts, *(model_params or []), observe=False)
         # convert jax => numpy arrays
         prediction = {k: np.array(v) for k, v in prediction.items()}
         prediction.update(sampled_vars_trace)
