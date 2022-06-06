@@ -17,7 +17,7 @@ import pandas as pd
 
 from chem_oracle import util
 from chem_oracle.model import NonstructuralModel, StructuralModel
-from chem_oracle.util import morgan_matrix, rdkit_matrix
+from chem_oracle.util import maccs_matrix, morgan_matrix, rdkit_matrix
 
 # from hplc_analyze.hplc_reactivity import hplc_process
 from hplc_analyze.hplc_dario import hplc_process
@@ -192,6 +192,8 @@ class ExperimentManager:
                 self.fingerprints = rdkit_matrix(
                     self.mols, radius=fingerprint_radius, nbits=fingerprint_bits
                 )
+            elif fingerprints == "maccs":
+                self.fingerprints = maccs_matrix(self.mols)
 
             self.model = StructuralModel(
                 self.fingerprints, **{"N_props": N_props, **model_params}
