@@ -45,12 +45,14 @@ class Model:
     def __init__(
         self,
         N_props: int,
-        mem_beta_a: float = 0.9,
-        mem_beta_b: float = 0.9,
+        mem_beta_a: float = 1.0,
+        mem_beta_b: float = 2.0,
+        likelihood_sd: float = 0.3,
     ):
         self.N_props = N_props
         self.mem_beta_a = mem_beta_a
         self.mem_beta_b = mem_beta_b
+        self.likelihood_sd = likelihood_sd
 
         # Number of _unique_ reactivities for each reaction arity
         self.N_bin = self.N_props * (self.N_props - 1) // 2
@@ -92,7 +94,7 @@ class Model:
 
         reactivities = jnp.concatenate(
             [
-                sample(f"reactivities{i}", dist.Uniform(), sample_shape=(n,))
+                sample(f"reactivities{i}", dist.Beta(1.0, 2.0), sample_shape=(n,))
                 for i, n in zip(fact_sets, self.N)
             ]
         )
@@ -143,7 +145,7 @@ class Model:
             event_obs = [
                 sample(
                     f"reacts_obs{i+2}",
-                    dist.Poisson(rate=reacts[i][present_inds[i]]),
+                    dist.Normal(loc=reacts[i][present_inds[i]], scale=self.likelihood_sd),
                     obs=o,
                 )
                 for i, o in enumerate(obs)
@@ -152,7 +154,7 @@ class Model:
             event_obs = [
                 sample(
                     f"reacts_obs{i+2}",
-                    dist.Poisson(rate=reacts[i][present_inds[i]]),
+                    dist.Normal(loc=reacts[i][present_inds[i]], scale=self.likelihood_sd),
                 )
                 for i, o in enumerate(obs)
             ]
@@ -304,17 +306,11 @@ class NonstructuralModel(Model):
         self.ncompounds = ncompounds
 
     def mem(self):
-        mem_beta = sample(
-            "mem_beta",
-            dist.Beta(
-                self.mem_beta_a * jnp.ones((self.ncompounds, self.N_props)),
-                self.mem_beta_b * jnp.ones((self.ncompounds, self.N_props)),
-            ),
+        return sample(
+            "mem",
+            dist.Beta(self.mem_beta_a, self.mem_beta_b),
+            sample_shape=(self.ncompounds, self.N_props),
         )
-        # the first property is non-reactive, so ignore that
-        return deterministic(
-            "mem", stick_breaking(mem_beta, normalize=False)
-        )  # ncompounds x N_props
 
 
 class StructuralModel(Model):
@@ -334,15 +330,10 @@ class StructuralModel(Model):
         self.ncompounds, self.fingerprint_length = fingerprint_matrix.shape
 
     def mem(self):
-        mem_beta = sample(
-            "mem_beta",
+        fp_mem = sample(
+            "fp_mem",
             dist.Beta(self.mem_beta_a, self.mem_beta_b),
-            sample_shape=(self.fingerprint_length, self.N_props + 1),
-        )
-
-        # the first property is non-reactive, so ignore that
-        fp_mem = deterministic(
-            "fp_mem", stick_breaking(mem_beta, normalize=True)[..., 1:]
+            sample_shape=(self.fingerprint_length, self.N_props),
         )
 
         return deterministic(
