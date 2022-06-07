@@ -479,3 +479,6 @@ class ExperimentManager:
         # make sure all compound #'s are integers
         for column in columns:
             self.reactions_df[column] = self.reactions_df[column].astype(int)
+
+    def __getstate__(self):
+        return {k: v for k, v in self.__dict__.items() if "lock" not in k}
