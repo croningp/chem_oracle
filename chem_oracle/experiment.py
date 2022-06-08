@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import glob
 import logging
 import lzma
@@ -482,3 +484,14 @@ class ExperimentManager:
 
     def __getstate__(self):
         return {k: v for k, v in self.__dict__.items() if "lock" not in k}
+
+    @classmethod
+    def load(cls, filename) -> ExperimentManager:
+        with lzma.open(filename, 'rb') as f:
+            manager = pickle.load(f)
+            manager.update_lock = threading.Lock()
+        return manager
+
+    def save(self, filename):
+        with lzma.open(filename, 'wb') as f:
+            pickle.dump(self, f)
