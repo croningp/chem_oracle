@@ -198,7 +198,6 @@ class Model:
         knowledge_trace: Dict,
         draws=500,
         model_params=None,
-        **sampler_params,
     ):
         # numpyro chokes on non-sampled vars
         sites = self.sites(facts, knowledge_trace)

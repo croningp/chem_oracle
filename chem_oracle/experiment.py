@@ -299,7 +299,6 @@ class ExperimentManager:
                     self.reactions_df,
                     self.knowledge_trace,
                     draws=draws,
-                    sampler_kwargs=sampler_kwargs,
                 )
             else:
                 # produce trace from de novo sampling
