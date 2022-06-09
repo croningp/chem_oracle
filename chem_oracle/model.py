@@ -336,7 +336,7 @@ class StructuralModel(Model):
         )
 
         return deterministic(
-            "mem", jnp.max(self.fingerprints[..., jnp.newaxis] * fp_mem, axis=1)
+            "mem", jnp.sum(self.fingerprints[..., jnp.newaxis] * fp_mem, axis=1)
         )
 
 
