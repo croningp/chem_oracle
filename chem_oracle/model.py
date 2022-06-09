@@ -47,11 +47,15 @@ class Model:
         N_props: int,
         mem_beta_a: float = 1.0,
         mem_beta_b: float = 2.0,
+        react_beta_a: float = 1.0,
+        react_beta_b: float = 2.0,
         likelihood_sd: float = 0.3,
     ):
         self.N_props = N_props
         self.mem_beta_a = mem_beta_a
         self.mem_beta_b = mem_beta_b
+        self.react_beta_a = react_beta_a
+        self.react_beta_b = react_beta_b
         self.likelihood_sd = likelihood_sd
 
         # Number of _unique_ reactivities for each reaction arity
@@ -94,7 +98,11 @@ class Model:
 
         reactivities = jnp.concatenate(
             [
-                sample(f"reactivities{i}", dist.Beta(1.0, 2.0), sample_shape=(n,))
+                sample(
+                    f"reactivities{i}",
+                    dist.Beta(self.react_beta_a, self.react_beta_b),
+                    sample_shape=(n,),
+                )
                 for i, n in zip(fact_sets, self.N)
             ]
         )
@@ -145,7 +153,9 @@ class Model:
             event_obs = [
                 sample(
                     f"reacts_obs{i+2}",
-                    dist.Normal(loc=reacts[i][present_inds[i]], scale=self.likelihood_sd),
+                    dist.Normal(
+                        loc=reacts[i][present_inds[i]], scale=self.likelihood_sd
+                    ),
                     obs=o,
                 )
                 for i, o in enumerate(obs)
@@ -154,7 +164,9 @@ class Model:
             event_obs = [
                 sample(
                     f"reacts_obs{i+2}",
-                    dist.Normal(loc=reacts[i][present_inds[i]], scale=self.likelihood_sd),
+                    dist.Normal(
+                        loc=reacts[i][present_inds[i]], scale=self.likelihood_sd
+                    ),
                 )
                 for i, o in enumerate(obs)
             ]
