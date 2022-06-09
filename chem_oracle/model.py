@@ -164,9 +164,7 @@ class Model:
             event_obs = [
                 sample(
                     f"reacts_obs{i+2}",
-                    dist.Normal(
-                        loc=reacts[i][present_inds[i]], scale=self.likelihood_sd
-                    ),
+                    dist.Normal(loc=reacts[i], scale=self.likelihood_sd),
                 )
                 for i, o in enumerate(obs)
             ]
