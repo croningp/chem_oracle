@@ -54,7 +54,7 @@ class MassSpectra:
 
     def discretize(self, delta_mass: float):
         """
-        Bin the mass axis with resolution 
+        Bin the mass axis with resolution
 
         Parameters
         ----------
@@ -113,7 +113,7 @@ class MassSpectra:
 
         Parameters
         ----------
-        normalize (bool): 
+        normalize (bool):
         """
         TICs = self.spectra.sum(axis=1)
         return np.stack(
@@ -165,7 +165,7 @@ class MassSpectra:
         """
         Uses non-negative matrix factorization (NMF) to decompose the given series of
         mass spectra into independent groups of peaks.
-        
+
         Returns:
         Ion chromatogram for the spectra in each group and the corresponding
         mass spectra.
