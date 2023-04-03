@@ -99,8 +99,6 @@ def get_reagents(file):
     return reagents
 
 
-
-
 def get_spectrum(experiment_dir: str, channel: str = "A"):
     filename = path.join(experiment_dir, "DAD1{}".format(channel))
     npz_file = filename + ".npz"
@@ -230,17 +228,17 @@ def apply_filter(spec, filt):
     result = spec * filt
     return result
 
+
 class SpaceManager:
     def __init__(self, folder, data_n):
         self.folder = folder
         self.data_n = data_n
-        
+
         self.reagents_files = {
             i.split("_")[1]: i
             for i in glob.glob(os.path.join(self.folder, "reagents", "*_HPLC"))
             if "BLANK" not in i
-        
-}
+        }
 
     def filter_spectrum(self, file):
         """
@@ -260,7 +258,7 @@ class SpaceManager:
         filt = from_recon_to_filter(recon)
         diff = apply_filter(spec[:, 1], filt)
         return spec, diff, recon, filt
-    
+
     def get_reagent_chromatogram(self, reagent_name):
 
         file = self.reagents_files[reagent_name]
@@ -276,14 +274,16 @@ class SpaceManager:
         if reagents_names == []:
             return False, spec
         reagents_spec = [self.get_reagent_chromatogram(name) for name in reagents_names]
-        lib = makelib(reagents_spec, [space_manager[self.data_n][int(name)] for name in reagents_names])
+        lib = makelib(
+            reagents_spec,
+            [space_manager[self.data_n][int(name)] for name in reagents_names],
+        )
         return lib, spec
 
-    def hplc_process(self,file):
+    def hplc_process(self, file):
         original, diff, recon, filt = self.filter_spectrum(file)
         new_peaks = find_peaks(diff / max(recon), height=0.4)
         return 0.0 if len(new_peaks[0]) == 0 or len(new_peaks) > 15 else 1.0
-
 
     def filter_and_plot(self, file):
         original, diff, recon, filt = self.filter_spectrum(file)

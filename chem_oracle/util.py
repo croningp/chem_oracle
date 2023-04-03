@@ -48,9 +48,10 @@ def rdkit_bits(smiles: str, minpath: int, maxpath: int, nbits: int) -> np.ndarra
     result[rdkit_fp.GetOnBits()] = 1.0
     return result
 
+
 def maccs_matrix(smiles: Iterable[str]):
     return np.array([MACCSkeys.GenMACCSKeys(Chem.MolFromSmiles(s)) for s in smiles])
-    
+
 
 def morgan_matrix(mols: Iterable[str], radius: int, nbits: int):
     return np.stack([morgan_bits(mol, radius, nbits) for mol in mols])
