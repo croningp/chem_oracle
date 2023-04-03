@@ -6,3 +6,5 @@ data
 *.ipynb
 **/.ipynb_checkpoints
 .mypy_cache/
+.pytest_cache/
+poetry.lock

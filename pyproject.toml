@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "chem-oracle"
+version = "0.1.0"
+description = "A Bayesian Oracle that automatically interpret the outcomes of chemistry experiments."
+authors = ["Hessam Mehr <Hessam.Mehr@glasgow.ac.uk>"]
+license = "Apache License 2"
+readme = "README.md"
+packages = [{include = "chem_oracle"}, {include = "hplc_analyze"}, {include = "ms_analyze"}, {include = "nmr_analyze"}]
+
+[[tool.poetry.source]]
+name = "jax-gpu"
+url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+default = false
+secondary = false
+
+[[tool.poetry.source]]
+name = "jax-cpu"
+url = "https://storage.googleapis.com/jax-releases/jax_releases.html"
+default = false
+secondary = false
+
+[tool.poetry.dependencies]
+python = "^3.10,<3.12"
+pandas = "^1.5.3"
+numpyro = "^0.11.0"
+watchdog = "^3.0.0"
+rdkit = "^2022.9.5"
+seaborn = "^0.12.2"
+scikit-learn = "^1.2.2"
+scipy = "^1.10.1"
+matplotlib = "^3.7.1"
+openpyxl = "^3.1.2"
+# To run on GPU
+jaxlib = {version="^0.4.7", source="jax-gpu"}
+# To run on CPU
+# jaxlib = {version="^0.4.8", source="jax-cpu"}
+tensorflow = "^2.12.0"
+
+[tool.poetry.group.dev.dependencies]
+ipython = "^8.12.0"
+jupyterlab = "^3.6.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
